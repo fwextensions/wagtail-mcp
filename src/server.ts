@@ -9,7 +9,7 @@ import {
   description as listPagesToolDescription,
   paramsSchema as listPagesToolParamsSchema,
   toolCallback as listPagesToolCallback,
-} from './tools/wagtail-list-pages.tool'; // Removed .js extension
+} from './tools/search-pages.tool'; // Updated filename
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
