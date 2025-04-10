@@ -12,8 +12,8 @@ const WAGTAIL_API_KEY = process.env.WAGTAIL_API_KEY;
 
 // --- Tool Definition ---
 
-export const name = 'wagtail_list_pages'; 
-export const description = 'Lists pages from the Wagtail CMS API.';
+export const name = 'search_pages'; 
+export const description = 'Searches pages from the Wagtail CMS API based on a query.';
 
 // Define parameters the tool accepts
 export const paramsSchema = {
@@ -34,42 +34,43 @@ export const paramsSchema = {
     .string()
     .optional()
     .describe('Filter by page type (e.g., blog.BlogPage).'),
-  fields: z
+  query: z
+    .string()
+    .describe('Query term to search pages. This is required.'),
+  locale: z
     .string()
     .optional()
-    .default('*')
-    .describe('Comma-separated list of fields to include (e.g., id,title,slug). Use * for all.'),
-  search: z
-    .string()
-    .optional()
-    .describe('Search term to filter pages.'),
+    .default('en')
+    .describe('The locale code (e.g., en, es) to filter pages by. Defaults to en.'),
   // Add other relevant Wagtail API parameters as needed (e.g., child_of, descendant_of)
 };
 
-// Define the expected structure of a single page item from the Wagtail API
+// Define the expected structure of a single page item RETURNED BY THIS TOOL
+const ReturnedPageSchema = z.object({
+  id: z.number(),
+  type: z.string(), 
+  slug: z.string(), 
+  title: z.string(),
+});
+
+// Define the expected structure of a single page item FROM THE WAGTAIL API
 // (Adjust based on your actual Wagtail Page model and API fields)
-const WagtailPageSchema = z.object({
+const WagtailApiPageSchema = z.object({
   id: z.number(),
   meta: z.object({
     type: z.string(),
-    detail_url: z.string(),
-    html_url: z.string().nullable(),
     slug: z.string(),
-    first_published_at: z.string().nullable(),
-//    first_published_at: z.string().datetime().nullable(),
-    // Potentially add search score if search is used
-    search_score: z.number().optional(),
   }),
   title: z.string(),
-  // Allow other fields as they depend on the requested 'fields' param
-}).passthrough(); 
+  // Allow other fields from API, but we won't return them
+}).passthrough();
 
 // Define the expected structure of the Wagtail API response for listing pages
 const WagtailApiResponseSchema = z.object({
   meta: z.object({
     total_count: z.number(),
   }),
-  items: z.array(WagtailPageSchema),
+  items: z.array(WagtailApiPageSchema), 
 });
 
 // --- Tool Handler ---
@@ -106,8 +107,12 @@ export const toolCallback: ToolCallback<typeof paramsSchema> = async (
   if (args.limit !== undefined) queryParams.limit = args.limit;
   if (args.offset !== undefined) queryParams.offset = args.offset;
   if (args.type !== undefined) queryParams.type = args.type;
-  if (args.fields !== undefined) queryParams.fields = args.fields;
-  if (args.search !== undefined) queryParams.search = args.search;
+  // Request only top-level fields. Meta fields might be included by default.
+  queryParams.fields = 'id,title';
+  // Map the tool's 'query' param to Wagtail's 'search' API param
+  if (args.query !== undefined) queryParams.search = args.query;
+  // Map the tool's 'locale' param to Wagtail's 'locale' API param
+  if (args.locale !== undefined) queryParams.locale = args.locale;
   // Map other args to query params here
 
   // 5. Make API Call
@@ -127,19 +132,37 @@ export const toolCallback: ToolCallback<typeof paramsSchema> = async (
       );
     }
 
-    const pages = validationResult.data.items;
+    const apiPages = validationResult.data.items;
     const totalCount = validationResult.data.meta.total_count;
-//    console.log(`Successfully fetched ${pages.length} of ${totalCount} pages.`);
+//    console.log(`Successfully fetched ${apiPages.length} of ${totalCount} pages.`);
 
-    // 7. Map to CallToolResult format
+    // 7. Map API response to the desired simpler format
+    const returnedPages = apiPages.map(page => ({
+      id: page.id,
+      // Assuming meta is returned even if not explicitly in fields
+      type: page.meta?.type || 'unknown', // Add safe access
+      slug: page.meta?.slug || 'unknown', // Add safe access
+      title: page.title,
+    }));
+
+    // 8. Validate the final structure (optional but good practice)
+    const finalValidation = z.array(ReturnedPageSchema).safeParse(returnedPages);
+     if (!finalValidation.success) {
+       console.error('Final response validation failed:', finalValidation.error);
+       // Decide how to handle this - log, throw, or return potentially incorrect data?
+       // For now, we'll log and proceed, but ideally, this shouldn't happen if mapping is correct.
+     }
+
+    // 9. Map to CallToolResult format
     return {
       content: [
         {
           type: 'text',
-          text: JSON.stringify({ 
-            count: pages.length, 
-            total_count: totalCount, 
-            items: pages 
+          // Return the simplified, mapped items
+          text: JSON.stringify({
+            count: returnedPages.length,
+            total_count: totalCount,
+            items: returnedPages // Use the mapped array
           }),
         },
       ],
