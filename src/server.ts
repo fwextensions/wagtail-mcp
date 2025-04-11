@@ -5,10 +5,10 @@ import path from 'path';
 
 // Import the tool definitions
 import {
-  name as listPagesToolName,
-  description as listPagesToolDescription,
-  paramsSchema as listPagesToolParamsSchema,
-  toolCallback as listPagesToolCallback,
+  name as searchPagesToolName,
+  description as searchPagesToolDescription,
+  paramsSchema as searchPagesToolParamsSchema,
+  toolCallback as searchPagesToolCallback,
 } from './tools/search-pages.tool'; // Updated filename
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -45,12 +45,12 @@ async function main() {
   );
 
   // --- Tool Registration ---
-//  console.log(`Registering tool: ${listPagesToolName}`);
+//  console.log(`Registering tool: ${searchPagesToolName}`);
   server.tool(
-    listPagesToolName,
-    listPagesToolDescription,
-    listPagesToolParamsSchema,
-    listPagesToolCallback
+    searchPagesToolName,
+    searchPagesToolDescription,
+    searchPagesToolParamsSchema,
+    searchPagesToolCallback
   );
 
   // --- Transport Initialization and Connection ---

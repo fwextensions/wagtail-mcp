@@ -126,6 +126,7 @@ Currently implemented:
 Future tools (as per original spec):
 
 *   `get_page_details`
+*   `get_page_html`
 *   `list_images`
 *   `get_image_details`
 *   `list_documents`
