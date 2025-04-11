@@ -83,9 +83,9 @@ Implementation focuses on configuring the SDK and providing **Tool** handlers.
 
 **5.2. Tool Definition and Implementation:**
 
-*   For each logical operation (e.g., `list_pages`), define a corresponding **Tool** in a separate `.tool.ts` file (e.g., `src/tools/wagtail-list-pages.tool.ts`).
+*   For each logical operation (e.g., `search_pages`), define a corresponding **Tool** in a separate `.tool.ts` file (e.g., `src/tools/search-pages.tool.ts`).
 *   Each tool file must export:
-    *   `name`: A unique string identifier for the tool (e.g., `'wagtail_list_pages'`).
+    *   `name`: A unique string identifier for the tool (e.g., `'search_pages'`).
     *   `description`: A string describing the tool's purpose.
     *   `paramsSchema`: A Zod object schema defining the expected input parameters for the tool.
     *   `toolCallback`: An `async` function matching the `ToolCallback` signature (imported from `@modelcontextprotocol/sdk/server/mcp.js`).
@@ -118,10 +118,10 @@ Implementation focuses on configuring the SDK and providing **Tool** handlers.
 
 Currently implemented:
 
-*   **`wagtail_list_pages`**: Lists pages from Wagtail API.
-    *   `description`: "Lists pages from the Wagtail CMS API."
-    *   `paramsSchema`: Zod schema for `limit`, `offset`, `type`, `fields`, `search`.
-    *   `toolCallback`: Implemented in `src/tools/wagtail-list-pages.tool.ts`.
+*   **`search_pages`**: Searches pages from Wagtail API.
+    *   `description`: "Searches pages from the Wagtail CMS API."
+    *   `paramsSchema`: Zod schema for `query` (required string), `limit` (optional number, default 50), `offset` (optional number), `type` (optional string), `locale` (optional string, default 'en').
+    *   `toolCallback`: Implemented in `src/tools/search-pages.tool.ts`.
 
 Future tools (as per original spec):
 
@@ -131,7 +131,7 @@ Future tools (as per original spec):
 *   `get_image_details`
 *   `list_documents`
 *   `get_document_details`
-*   `search_content`
+*   `list_pages`
 
 **8. Configuration**
 
@@ -158,7 +158,9 @@ Environment variables (`.env` file loaded by `dotenv`):
 *   **MCP Request Validation:** Handled *by the SDK* using the Zod `paramsSchema` provided for each tool.
 *   **Wagtail API / Internal Errors:** Within `toolCallback` functions:
     *   Catch errors (network, API response issues, validation failures).
-    *   **Throw standard `Error` objects**. The SDK catches these and formats the MCP error response.
+    *   **Throw standard `Error` objects**. The SDK catches these and formats the MCP error response. Do not use `SdkError` as it may not be available or correctly typed.
+    *   **Debugging/Logging:** Standard `console.log` (or `info`, `debug`, etc.) should **not** be used within the server or tool logic for general debugging when using the stdio transport. Any output to stdout/stderr will interfere with the MCP communication protocol. Use `console.error` sparingly only for critical unrecoverable errors that should terminate the process, or implement a dedicated logging solution that writes to a file if needed.
+*   Type inference should be relied upon for the `extra` parameter and the `Promise<CallToolResult>` return type, as explicitly importing `CallToolResult` and `RequestHandlerExtra` can cause type resolution issues with the SDK.
 
 **11. Deployment Considerations**
 
@@ -198,29 +200,14 @@ Environment variables (`.env` file loaded by `dotenv`):
     *   Log successful startup.
     *   Basic run test (`npm start` with `MCP_ENABLE_STDIO=true`).
 
-2.  **Milestone 2: Implement First Tool (`wagtail_list_pages`)**
-    *   Create `src/tools/wagtail-list-pages.tool.ts`.
-    *   Export `name`, `description`, Zod `paramsSchema`.
-    *   Implement the `toolCallback` function: Config reading, Wagtail API call logic (`axios`), conditional auth header, response parsing/validation, correct `CallToolResult` formatting (`type: 'text', text: JSON.stringify(...)`), standard `Error` handling.
-    *   Register the tool with the `McpServer` instance in `src/server.ts` using `server.tool()`.
-    *   Build (`npm run build`).
-    *   Test using a stdio client script sending a valid `callTool` request. Verify success and error cases.
+2.  **Milestone 2: Implement First Tool (`search_pages`)**
+    *   Create `src/tools/search-pages.tool.ts`.
+    *   Define and export `name`, `description`, `paramsSchema` (for `query`, `limit`, `offset`, `type`, `locale`), and `toolCallback`.
+    *   Implement `toolCallback` to handle API interaction, mapping `query` to `search`, including `locale`, and returning only `id`, `type`, `slug`, `title` fields.
+    *   Import and register the tool in `src/server.ts`.
+    *   Test the tool execution.
 
-3.  **Milestone 3: Implement Remaining Get/List Tools**
-    *   Create tool files (e.g., `src/tools/get-page-details.tool.ts`, etc.) exporting the required constants/functions.
-    *   Implement the `toolCallback` for each.
-    *   Refactor common logic (e.g., `makeWagtailRequest` helper function).
-    *   Register all new tools with the SDK server.
-    *   Build and add tests for each tool.
+3.  **Milestone 3: Implement Other Read Tools (e.g., `get_page_details`)**
+    *   Follow the pattern from Milestone 2 for additional tools.
 
-4.  **Milestone 4: Implement Search Tool & Refine Validation/Errors**
-    *   Create and implement the `wagtail_search_content` tool handler.
-    *   Ensure robust parameter validation using Zod's `parse` within each `toolCallback`.
-    *   Refine error handling: Ensure consistent use of standard `Error` for all anticipated Wagtail API errors and internal issues across all tools.
-    *   Build and test edge cases for search and error conditions.
-
-5.  **Milestone 5: Final Polish & Documentation**
-    *   Review all code for clarity, consistency, and error handling.
-    *   Ensure `README.md` is up-to-date with setup, configuration, and execution instructions.
-    *   Ensure `.env.example` is accurate.
-    *   Final build and test cycle.
+{{ ... }}

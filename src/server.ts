@@ -14,16 +14,11 @@ import {
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 async function main() {
-//  console.log('Starting MCP server...');
 
   // Initialize Configuration (using dotenv loaded values)
   const serviceName = process.env.MCP_SERVICE_NAME || 'Wagtail MCP Server (Default)';
   const serviceVersion = process.env.MCP_SERVICE_VERSION || '0.1.0';
   const enableStdio = process.env.MCP_ENABLE_STDIO?.toLowerCase() === 'true';
-
-//  console.log(`Service Name: ${serviceName}`);
-//  console.log(`Service Version: ${serviceVersion}`);
-//  console.log(`Stdio Enabled: ${enableStdio}`);
 
   if (!serviceName || !serviceVersion) {
     console.error('MCP_SERVICE_NAME and MCP_SERVICE_VERSION must be set in the environment.');
@@ -45,7 +40,6 @@ async function main() {
   );
 
   // --- Tool Registration ---
-//  console.log(`Registering tool: ${searchPagesToolName}`);
   server.tool(
     searchPagesToolName,
     searchPagesToolDescription,
@@ -56,18 +50,15 @@ async function main() {
   // --- Transport Initialization and Connection ---
   let transportConnected = false;
   if (enableStdio) {
-//    console.log('Setting up Stdio transport...');
     // Instantiate stdio transport - defaults to process.stdin/stdout
     const transport = new StdioServerTransport(); 
     try {
       await server.connect(transport);
-//      console.log('Stdio transport connected successfully.');
       transportConnected = true;
     } catch (error) {
       console.error('Failed to connect Stdio transport:', error);
     }
   } else {
-//      console.log('Stdio transport is disabled via MCP_ENABLE_STDIO.');
   }
 
   // Add other transport setups here (e.g., HTTP) if needed
@@ -77,14 +68,10 @@ async function main() {
     process.exit(1);
   }
 
-//  console.log('MCP server running and connected.');
-
   // --- Graceful Shutdown Handling ---
   const shutdown = async (signal: string) => {
-//    console.log(`Received ${signal}, shutting down server...`);
     try {
       await server.close();
-//      console.log('Server shut down gracefully.');
       process.exit(0);
     } catch (error) {
       console.error('Error during server shutdown:', error);

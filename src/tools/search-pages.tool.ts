@@ -79,8 +79,6 @@ export const toolCallback: ToolCallback<typeof paramsSchema> = async (
   args,
   extra
 ) => {
-//  console.log(`Handling tool call: ${name} with args:`, args);
-
   // 1. Validate Environment Configuration
   if (!WAGTAIL_BASE_URL) {
     throw new Error('WAGTAIL_BASE_URL environment variable is not set.');
@@ -117,7 +115,6 @@ export const toolCallback: ToolCallback<typeof paramsSchema> = async (
 
   // 5. Make API Call
   try {
-//    console.log(`Fetching pages from: ${apiUrl} with params:`, queryParams);
     const response = await axios.get(apiUrl, {
       headers: headers,
       params: queryParams,
@@ -134,7 +131,6 @@ export const toolCallback: ToolCallback<typeof paramsSchema> = async (
 
     const apiPages = validationResult.data.items;
     const totalCount = validationResult.data.meta.total_count;
-//    console.log(`Successfully fetched ${apiPages.length} of ${totalCount} pages.`);
 
     // 7. Map API response to the desired simpler format
     const returnedPages = apiPages.map(page => ({
