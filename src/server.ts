@@ -9,7 +9,15 @@ import {
   description as searchPagesToolDescription,
   paramsSchema as searchPagesToolParamsSchema,
   toolCallback as searchPagesToolCallback,
-} from './tools/search-pages.tool'; // Updated filename
+} from './tools/search-pages.tool';
+
+// Import the new tool definition
+import {
+  name as getPageDetailsToolName,
+  description as getPageDetailsToolDescription,
+  paramsSchema as getPageDetailsToolParamsSchema,
+  toolCallback as getPageDetailsToolCallback,
+} from './tools/get-page-details.tool';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
@@ -18,7 +26,8 @@ async function main() {
   // Initialize Configuration (using dotenv loaded values)
   const serviceName = process.env.MCP_SERVICE_NAME || 'Wagtail MCP Server (Default)';
   const serviceVersion = process.env.MCP_SERVICE_VERSION || '0.1.0';
-  const enableStdio = process.env.MCP_ENABLE_STDIO?.toLowerCase() === 'true';
+  // Enable STDIO by default, disable only if explicitly set to 'false'
+  const enableStdio = process.env.MCP_ENABLE_STDIO?.toLowerCase() !== 'false';
 
   if (!serviceName || !serviceVersion) {
     console.error('MCP_SERVICE_NAME and MCP_SERVICE_VERSION must be set in the environment.');
@@ -45,6 +54,14 @@ async function main() {
     searchPagesToolDescription,
     searchPagesToolParamsSchema,
     searchPagesToolCallback
+  );
+
+  // Register the get_page_details tool
+  server.tool(
+    getPageDetailsToolName,
+    getPageDetailsToolDescription,
+    getPageDetailsToolParamsSchema,
+    getPageDetailsToolCallback
   );
 
   // --- Transport Initialization and Connection ---
