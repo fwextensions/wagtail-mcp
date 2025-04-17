@@ -177,11 +177,11 @@ Environment variables (`.env` file loaded by `dotenv`):
 *   **SDK Imports:** The SDK's module structure required using specific, non-standard import paths including the `.js` extension (e.g., `import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';`). Root imports or imports without the extension failed.
 *   **SDK Types:** Explicitly importing and using certain types from the SDK (like `CallToolResult`, `RequestHandlerExtra`, `SdkError`) caused TypeScript resolution errors. The solution was to **remove these explicit imports/annotations** and rely on **type inference** derived from the `ToolCallback` type signature.
 *   **Tool Result Formatting:** The expected format for returning data from a `toolCallback` required careful adherence to the inferred `CallToolResult` type. For structured data, this meant using `{ content: [{ type: 'text', text: JSON.stringify(...) }] }`.
-*   **Error Handling:** The anticipated `SdkError` class was not reliably available or correctly typed. Throwing **standard `Error` objects** proved effective, as the SDK correctly catches and formats them into MCP error responses.
+*   **Error Handling:** The anticipated `SdkError` class was not reliably available or correctly typed. Throwing **standard `Error` objects** proved effective, as the SDK correctly catches and formats them into MCP error responses. Do not use `SdkError` as it may not be available or correctly typed.
+*   **Debugging/Logging:** Standard `console.log` (or `info`, `debug`, etc.) should **not** be used within the server or tool logic for general debugging when using the stdio transport. Any output to stdout/stderr will interfere with the MCP communication protocol. Use `console.error` sparingly only for critical unrecoverable errors that should terminate the process, or implement a dedicated logging solution that writes to a file if needed.
 
 **13. Future Enhancements**
 
-*(Same as previous spec)*
 *   More specific Wagtail features (filtering, ordering).
 *   Other Wagtail auth methods.
 *   Write actions (as Tools).
@@ -190,7 +190,7 @@ Environment variables (`.env` file loaded by `dotenv`):
 
 **14. Development Milestones (Revised for SDK Tools & Stdio)**
 
-1.  **Milestone 1: Project Setup & Basic SDK Stdio Server**
+1.  **Milestone 1: Project Setup & Basic SDK Stdio Server (COMPLETE)**
     *   Initialize Node.js project, Git, TypeScript.
     *   Install dependencies: `@modelcontextprotocol/sdk`, `typescript`, `@types/node`, `axios`, `zod`, `dotenv`.
     *   Create `src/server.ts`.
@@ -200,14 +200,28 @@ Environment variables (`.env` file loaded by `dotenv`):
     *   Log successful startup.
     *   Basic run test (`npm start` with `MCP_ENABLE_STDIO=true`).
 
-2.  **Milestone 2: Implement First Tool (`search_pages`)**
+2.  **Milestone 2: Implement Initial Read Tool (`search_pages`) (COMPLETE)**
     *   Create `src/tools/search-pages.tool.ts`.
-    *   Define and export `name`, `description`, `paramsSchema` (for `query`, `limit`, `offset`, `type`, `locale`), and `toolCallback`.
+    *   Define `name`, `description`.
+    *   Define `paramsSchema` (Zod) for `query`, `limit`, `offset`, `type`, `locale`.
     *   Implement `toolCallback` to handle API interaction, mapping `query` to `search`, including `locale`, and returning only `id`, `type`, `slug`, `title` fields.
     *   Import and register the tool in `src/server.ts`.
-    *   Test the tool execution.
+    *   Build and basic test.
 
-3.  **Milestone 3: Implement Other Read Tools (e.g., `get_page_details`)**
+3.  **Milestone 3: Implement Other Read Tools (e.g., `get_page_details`) (IN PROGRESS)**
     *   Follow the pattern from Milestone 2 for additional tools.
+    *   Refactor common logic (e.g., `makeWagtailRequest` helper function).
+    *   Register all new tools with the SDK server.
+    *   Build and add tests for each tool.
 
-{{ ... }}
+4.  **Milestone 4: Implement Search Tool & Refine Validation/Errors**
+    *   Create and implement the `search_content` tool handler.
+    *   Ensure robust parameter validation using Zod's `parse` within each `toolCallback`.
+    *   Refine error handling: Ensure consistent use of standard `Error` for all anticipated Wagtail API errors and internal issues across all tools.
+    *   Build and test edge cases for search and error conditions.
+
+5.  **Milestone 5: Final Polish & Documentation**
+    *   Review all code for clarity, consistency, and error handling.
+    *   Ensure `README.md` is up-to-date with setup, configuration, and execution instructions.
+    *   Ensure `.env.example` is accurate.
+    *   Final build and test cycle.
