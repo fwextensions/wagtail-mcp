@@ -3,7 +3,7 @@
 This project implements a Model Context Protocol (MCP) server that provides read-only access to a Wagtail CMS instance using its V2 API.
 It is built using the official [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/sdk) for TypeScript/JavaScript.
 
-**Version:** 2.0.0
+**Version:** 0.0.1
 
 ## Features
 
