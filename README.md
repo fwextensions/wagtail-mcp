@@ -12,7 +12,7 @@ It is built using the official [`@modelcontextprotocol/sdk`](https://github.com/
 *   Provides read-only access to Wagtail Pages, Images, and Documents.
 *   Defines standard MCP actions for listing, fetching details, and searching.
 *   Configurable via environment variables (Wagtail URL, API key, transport settings).
-*   Supports HTTP and stdio transports (configurable).
+*   Supports stdio transport.
 *   Uses TypeScript for enhanced type safety and development experience.
 *   Uses Zod for schema definition and validation.
 
@@ -43,8 +43,7 @@ It is built using the official [`@modelcontextprotocol/sdk`](https://github.com/
     Edit the `.env` file and set the required variables, especially:
     *   `WAGTAIL_BASE_URL`: The base URL of your Wagtail instance (e.g., `http://localhost:8000`).
     *   `WAGTAIL_API_KEY`: (Optional) An API key if your Wagtail API requires authentication.
-    *   `MCP_ENABLE_HTTP=true` or `MCP_ENABLE_STDIO=true`: At least one transport must be enabled.
-    *   Configure `MCP_HTTP_PORT` and `MCP_HTTP_HOST` if using the HTTP transport.
+    *   `MCP_TRANSPORT`: (Optional) Specifies the transport mechanism. Currently, only `STDIO` is supported and used by default.
 
 ## Running the Server
 
@@ -59,33 +58,33 @@ It is built using the official [`@modelcontextprotocol/sdk`](https://github.com/
     ```
     This will run the compiled JavaScript code from the `dist` directory.
 
-3.  **Development Mode (using ts-node):**
+3.  **Development Mode (using `ts-node`):**
     To run directly from TypeScript source without building (useful for development):
     ```bash
     npm run dev
     ```
 
-The server will log its status, including which transports are active and the address/port if HTTP is enabled.
+The server will log its status. Since it now uses the stdio transport exclusively, it waits for MCP requests on standard input and sends responses to standard output.
 
-## Available Actions (To be implemented in subsequent milestones)
+## Implemented Tools
 
-*   `list_pages`
-*   `get_page_details`
-*   `list_images`
-*   `get_image_details`
-*   `list_documents`
-*   `get_document_details`
-*   `search_content`
+*   **`search_pages`**: Searches pages based on a query string and other filters.
+*   **`get_page_details`**: Retrieves detailed information for a specific page by ID, slug, or URL. Supports customizing returned fields.
+*   **`search_documents`**: Searches documents based on a query string.
+*   **`get_document_details`**: Retrieves detailed information (ID, title, download URL) for a specific document by ID.
 
 ## Configuration Details
 
-See the `.env.example` file for a full list of environment variables:
+Environment variables are loaded from a `.env` file in the project root (create one from `.env.example`).
 
-*   **SDK Transport:** `MCP_ENABLE_HTTP`, `MCP_HTTP_PORT`, `MCP_HTTP_HOST`, `MCP_ENABLE_STDIO`
-*   **Wagtail:** `WAGTAIL_BASE_URL`, `WAGTAIL_API_PATH`, `WAGTAIL_API_KEY`
-*   **Server Metadata:** `MCP_SERVICE_NAME`, `MCP_SERVICE_VERSION`, `MCP_SERVICE_DESCRIPTION`
-*   **Server Auth:** `MCP_SERVER_API_KEY` (Optional API key for clients connecting *to* this server)
-*   **General:** `LOG_LEVEL`
+*   **Server Configuration:**
+    *   `MCP_SERVICE_NAME`: (Optional) Name for the server reported via MCP. Defaults to 'Wagtail MCP Server (Default)'.
+    *   `MCP_SERVICE_VERSION`: (Optional) Version string for the server reported via MCP. Defaults to '0.1.0'.
+    *   `MCP_TRANSPORT`: (Optional) Specifies the transport mechanism. Currently, only `STDIO` is supported and used by default.
+*   **Wagtail API Configuration:**
+    *   `WAGTAIL_BASE_URL`: **Required**. The base URL of your Wagtail instance (e.g., `http://localhost:8000`).
+    *   `WAGTAIL_API_PATH`: (Optional) Path to the API endpoint. Defaults to `/api/v2`.
+    *   `WAGTAIL_API_KEY`: (Optional) An API key if your Wagtail API requires bearer token authentication.
 
 ## Project Structure
 
