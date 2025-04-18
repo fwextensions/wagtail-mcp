@@ -6,7 +6,12 @@ dotenv.config();
 
 // --- Tool Definition ---
 export const name = 'get_page_details';
-export const description = 'Retrieves the full details of a specific Wagtail page by its ID, slug, or URL. Requires at least one parameter. Priority: id > slug > url.';
+export const description = `Retrieves the full details of a specific Wagtail page by its ID, slug, or URL. Requires at least one parameter. Priority: id > slug > url.
+You can use the optional 'fields' parameter to customize the returned data. Examples:
+- 'body,feed_image': Add 'body' and 'feed_image'.
+- '*,-body': Add all fields except 'body'.
+- '_': Remove all default fields.
+- '_,title,last_published_at': Return only 'title' and 'last_published_at'.`;
 
 // --- Input Parameters Schema --- 
 // Define as a plain object with Zod validators (ZodRawShape)
@@ -14,7 +19,8 @@ export const description = 'Retrieves the full details of a specific Wagtail pag
 export const paramsSchema = {
   id: z.number().int().positive().optional().describe('The unique numeric ID of the page.'),
   slug: z.string().optional().describe('The slug (URL path part) of the page (e.g., "about-us/team").'),
-  url: z.string().url().optional().describe('The full public URL of the page.')
+  url: z.string().url().optional().describe('The full public URL of the page.'),
+  fields: z.string().optional().describe('Optional comma-separated list to control returned fields (e.g., "body,feed_image", "*,-title", "_,my_field"). See Wagtail API docs for details.')
 };
 
 // Define the actual Zod object from the shape for inference
@@ -50,6 +56,16 @@ export const toolCallback = async (
     throw new Error('At least one of "id", "slug", or "url" must be provided.');
   }
 
+  // --- Modification: Ignore id if it's 0 ---
+  if (args.id === 0) {
+    args.id = undefined;
+    // Re-validate if other parameters exist after ignoring id=0
+    if (args.slug === undefined && args.url === undefined) {
+       throw new Error('At least one of "slug" or "url" must be provided when id is 0.');
+    }
+  }
+  // ----------------------------------------
+
   // 1. Validate Environment Configuration
   const WAGTAIL_BASE_URL = process.env.WAGTAIL_BASE_URL;
   const WAGTAIL_API_PATH = process.env.WAGTAIL_API_PATH || '/api/v2'; // Default API path
@@ -66,7 +82,7 @@ export const toolCallback = async (
   if (args.id !== undefined) {
     // Construct the endpoint specific to ID lookup
     apiEndpoint = `/pages/${args.id}/`; 
-    // No queryParams needed for ID lookup
+    // No queryParams needed for ID lookup, but fields might be
   } else if (args.slug !== undefined) {
     // Construct the endpoint specific to find lookup
     apiEndpoint = `/pages/find/`; 
@@ -85,6 +101,11 @@ export const toolCallback = async (
       // This case should theoretically be caught by the Zod refinement,
       // but it's good practice to handle it defensively.
       throw new Error('Internal error: No valid parameter found despite schema validation.');
+  }
+
+  // Add fields parameter if provided
+  if (args.fields) {
+    queryParams.fields = args.fields;
   }
 
   // Construct the final API URL robustly handling slashes

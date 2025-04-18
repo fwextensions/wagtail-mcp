@@ -19,6 +19,22 @@ import {
   toolCallback as getPageDetailsToolCallback,
 } from './tools/get-page-details.tool';
 
+// Import the search documents tool definition
+import {
+  name as searchDocumentsToolName,
+  description as searchDocumentsToolDescription,
+  paramsSchema as searchDocumentsToolParamsSchema,
+  toolCallback as searchDocumentsToolCallback,
+} from './tools/search-documents.tool'; // Adjusted import path
+
+// Import the get document details tool definition
+import {
+  name as getDocumentDetailsToolName,
+  description as getDocumentDetailsToolDescription,
+  paramsSchema as getDocumentDetailsToolParamsSchema,
+  toolCallback as getDocumentDetailsToolCallback,
+} from './tools/get-document-details.tool';
+
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 async function main() {
@@ -64,16 +80,32 @@ async function main() {
     getPageDetailsToolCallback
   );
 
+  // Register the search_documents tool
+  server.tool(
+    searchDocumentsToolName,
+    searchDocumentsToolDescription,
+    searchDocumentsToolParamsSchema,
+    searchDocumentsToolCallback
+  );
+
+  // Register the get_document_details tool
+  server.tool(
+    getDocumentDetailsToolName,
+    getDocumentDetailsToolDescription,
+    getDocumentDetailsToolParamsSchema,
+    getDocumentDetailsToolCallback
+  );
+
   // --- Transport Initialization and Connection ---
   let transportConnected = false;
   try {
     if (transportType === 'STDIO') {
-      console.log('Connecting using STDIO transport...');
+//      console.log('Connecting using STDIO transport...');
       // Instantiate stdio transport - defaults to process.stdin/stdout
       const transport = new StdioServerTransport();
       await server.connect(transport);
       transportConnected = true;
-      console.log('STDIO transport connected.');
+//      console.log('STDIO transport connected.');
     } else {
       console.error(`Invalid MCP_TRANSPORT value: "${transportType}". Currently, only "STDIO" is supported in this server configuration.`);
     }
