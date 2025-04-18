@@ -1,6 +1,8 @@
+import axios, { AxiosError } from 'axios';
 import { z } from 'zod';
-import axios from 'axios';
-import { URL } from 'url'; // For robust URL parsing
+import * as dotenv from 'dotenv';
+
+dotenv.config();
 
 // --- Tool Definition ---
 export const name = 'get_page_details';
@@ -15,15 +17,34 @@ export const paramsSchema = {
   url: z.string().url().optional().describe('The full public URL of the page.')
 };
 
-// Create a local ZodObject instance from the shape for robust type inference
-const paramsObjectSchema = z.object(paramsSchema);
+// Define the actual Zod object from the shape for inference
+const ParamsZodObject = z.object(paramsSchema);
 
-// Define the type for our parameters using z.infer on the local object instance
-type Params = z.infer<typeof paramsObjectSchema>;
+// Minimal type for the 'extra' parameter based on SDK expectations
+interface RequestHandlerExtra {
+  signal?: AbortSignal;
+}
+
+// Define the expected return structure
+interface CallToolResult {
+  [x: string]: unknown; // Index signature
+  content: {
+    type: "text";
+    text: string;
+  }[];
+  _meta?: { [x: string]: unknown; };
+  isError?: boolean;
+}
 
 // --- Tool Callback Function ---
-// NOTE: Explicit SDK type imports failed. Using 'unknown' for 'extra' parameter.
-export const toolCallback = async (args: Params, extra: unknown) => {
+// Define the callback signature directly
+export const toolCallback = async (
+  // Explicitly type args using the Zod object derived from the shape
+  args: z.infer<typeof ParamsZodObject>,
+  // Use the minimal RequestHandlerExtra type
+  extra: RequestHandlerExtra
+  // Explicitly type the return Promise
+): Promise<CallToolResult> => {
   // Validate that at least one parameter is provided
   if (args.id === undefined && args.slug === undefined && args.url === undefined) {
     throw new Error('At least one of "id", "slug", or "url" must be provided.');
@@ -99,16 +120,13 @@ export const toolCallback = async (args: Params, extra: unknown) => {
 
     // 5. Return Full JSON Response (as requested for now)
     // Format for MCP: content array with a single text item containing stringified JSON
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(response.data, null, 2), // Pretty print JSON
-        },
-      ],
-      // We can optionally add isError: false here, but it defaults to false
-      // NOTE: Casting to 'any' as a workaround for persistent SDK type import/mismatch errors.
-    } as any;
+    const outputJson = JSON.stringify(response.data, null, 2);
+
+    // Map to CallToolResult format
+    const result: CallToolResult = {
+      content: [{ type: "text", text: outputJson }],
+    };
+    return result;
 
   } catch (error: any) {
     if (axios.isAxiosError(error)) {

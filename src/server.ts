@@ -26,8 +26,8 @@ async function main() {
   // Initialize Configuration (using dotenv loaded values)
   const serviceName = process.env.MCP_SERVICE_NAME || 'Wagtail MCP Server (Default)';
   const serviceVersion = process.env.MCP_SERVICE_VERSION || '0.1.0';
-  // Enable STDIO by default, disable only if explicitly set to 'false'
-  const enableStdio = process.env.MCP_ENABLE_STDIO?.toLowerCase() !== 'false';
+  // Read the transport type, default to STDIO
+  const transportType = (process.env.MCP_TRANSPORT || 'STDIO').toUpperCase();
 
   if (!serviceName || !serviceVersion) {
     console.error('MCP_SERVICE_NAME and MCP_SERVICE_VERSION must be set in the environment.');
@@ -66,22 +66,23 @@ async function main() {
 
   // --- Transport Initialization and Connection ---
   let transportConnected = false;
-  if (enableStdio) {
-    // Instantiate stdio transport - defaults to process.stdin/stdout
-    const transport = new StdioServerTransport(); 
-    try {
+  try {
+    if (transportType === 'STDIO') {
+      console.log('Connecting using STDIO transport...');
+      // Instantiate stdio transport - defaults to process.stdin/stdout
+      const transport = new StdioServerTransport();
       await server.connect(transport);
       transportConnected = true;
-    } catch (error) {
-      console.error('Failed to connect Stdio transport:', error);
+      console.log('STDIO transport connected.');
+    } else {
+      console.error(`Invalid MCP_TRANSPORT value: "${transportType}". Currently, only "STDIO" is supported in this server configuration.`);
     }
-  } else {
+  } catch (error) {
+    console.error(`Failed to connect ${transportType} transport:`, error);
   }
 
-  // Add other transport setups here (e.g., HTTP) if needed
-
   if (!transportConnected) {
-    console.error('Server failed to connect to any transport. Please check configuration (e.g., MCP_ENABLE_STDIO). Exiting.');
+    console.error(`Server failed to connect using the configured transport (${transportType}). Check configuration (only STDIO supported) and logs. Exiting.`);
     process.exit(1);
   }
 
