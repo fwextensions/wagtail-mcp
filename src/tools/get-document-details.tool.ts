@@ -1,6 +1,7 @@
 import axios, { AxiosError } from "axios";
 import { z } from "zod";
 import * as dotenv from "dotenv";
+import { zNullToUndefined } from "./zodNullToUndefined";
 
 dotenv.config();
 
@@ -10,7 +11,7 @@ export const description = "Retrieves details (ID, title, download URL) for a sp
 
 // --- Input Parameters Schema ---
 export const paramsSchema = {
-	id: z.number().int().positive().describe(
+	id: zNullToUndefined(z.number().int().positive()).describe(
 		"The unique numeric ID of the document.")
 };
 

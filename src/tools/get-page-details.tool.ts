@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { z } from "zod";
+import { zNullToUndefined } from "./zodNullToUndefined";
 import * as dotenv from "dotenv";
 
 dotenv.config();
@@ -17,12 +18,12 @@ You can use the optional 'fields' parameter to customize the returned data. Exam
 // Define as a plain object with Zod validators (ZodRawShape)
 // This raw shape format is required by McpServer.tool()
 export const paramsSchema = {
-	id: z.number().int().positive().optional().describe(
+	id: zNullToUndefined(z.number().int().positive().optional()).describe(
 		"The unique numeric ID of the page."),
-	slug: z.string().optional().describe(
+	slug: zNullToUndefined(z.string().optional()).describe(
 		"The slug (URL path part) of the page (e.g., \"about-us/team\")."),
-	url: z.string().url().optional().describe("The full public URL of the page."),
-	fields: z.string().optional().describe(
+	url: zNullToUndefined(z.string().url().optional()).describe("The full public URL of the page."),
+	fields: zNullToUndefined(z.string().optional()).describe(
 		"Optional comma-separated list to control returned fields (e.g., \"body,feed_image\", \"*,-title\", \"_,my_field\"). See Wagtail API docs for details.")
 };
 

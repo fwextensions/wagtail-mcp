@@ -1,6 +1,7 @@
 import axios, { AxiosError } from "axios";
 import { z } from "zod";
 import * as dotenv from "dotenv";
+import { zNullToUndefined } from "./zodNullToUndefined";
 
 dotenv.config();
 
@@ -10,9 +11,9 @@ export const description = "Searches for Wagtail documents based on a query stri
 
 // --- Input Parameters Schema ---
 export const paramsSchema = {
-	query: z.string().min(1).describe(
+	query: zNullToUndefined(z.string().min(1)).describe(
 		"The search term to use for finding documents."),
-	search_operator: z.enum(["and", "or"]).optional().default("and").describe(
+	search_operator: zNullToUndefined(z.enum(["and", "or"]).optional().default("and")).describe(
 		`The logical operator to use if the query contains multiple terms ('and' or 'or'). Defaults to 'and'.`)
 };
 

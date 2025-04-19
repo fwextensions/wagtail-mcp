@@ -1,6 +1,7 @@
 import { z } from "zod";
 import axios, { AxiosError } from "axios";
 import * as dotenv from "dotenv";
+import { zNullToUndefined } from "./zodNullToUndefined";
 
 // Attempt to import the result type, or define below if it fails
 // import { CallToolResultContent } from '@modelcontextprotocol/sdk/types.js'; // Common types might be here
@@ -20,39 +21,13 @@ Allows filtering by type, locale, and controlling the search operator. Supports 
 
 // Define the Zod *shape* for the tool's parameters (not the object instance)
 export const paramsSchema = {
-	query: z
-		.string()
-		.describe("Query term to search pages. This is required."),
-	limit: z
-		.number()
-		.int()
-		.positive()
-		.optional()
-		.default(50)
-		.describe("Maximum number of pages to return."),
-	offset: z
-		.number()
-		.int()
-		.nonnegative()
-		.optional()
-		.describe("Offset for pagination."),
-	type: z
-		.string()
-		.optional()
-		.describe("Filter by page type (e.g., blog.BlogPage)."),
-	locale: z
-		.string()
-		.optional()
-		.default("en")
-		.describe(
-			"The locale code (e.g., en, es) to filter pages by. Defaults to en."),
-	search_operator: z
-		.preprocess((val) => (val === "" ? undefined : val),
-			z.enum(["and", "or"])
-				.optional()
-		)
-		.describe(
-			"Search operator for multiple terms (\"and\" or \"or\"). Defaults based on Wagtail search backend."),
+	query: zNullToUndefined(z.string().optional()).describe("Query term to search pages. If omitted, results can be filtered by type only."),
+	type: zNullToUndefined(z.string().optional()).describe("Filter by page type (e.g., blog.BlogPage). Can be used without query."),
+	fields: zNullToUndefined(z.string().optional()).describe("Optional comma-separated list to control returned fields (e.g., 'body,feed_image', '*,-title', '_,my_field'). See Wagtail API docs for details."),
+	limit: zNullToUndefined(z.number().int().positive().optional().default(50)).describe("Maximum number of pages to return."),
+	offset: zNullToUndefined(z.number().int().nonnegative().optional()).describe("Offset for pagination."),
+	locale: zNullToUndefined(z.string().optional().default("en")).describe("The locale code (e.g., en, es) to filter pages by. Defaults to en."),
+	search_operator: zNullToUndefined(z.enum(["and", "or"]).optional()).describe("Search operator for multiple terms ('and' or 'or'). Defaults based on Wagtail search backend."),
 };
 
 // Define the actual Zod object from the shape for inference
@@ -78,10 +53,10 @@ const OutputPageSchema = z.object({
 const WagtailApiPageSchema = z.object({
 	id: z.number(),
 	meta: z.object({
-		type: z.string(),
-		slug: z.string(),
-	}),
-	title: z.string(),
+		type: z.string().optional(),
+		slug: z.string().optional(),
+	}).optional(),
+	title: z.string().optional(),
 	// Allow other fields from API, but we won't return them
 }).passthrough();
 
@@ -148,10 +123,14 @@ export const toolCallback = async (
 	if (args.type !== undefined) {
 		queryParams.type = args.type;
 	}
-	// Request only top-level fields. Meta fields might be included by default.
-	queryParams.fields = "id,title";
+	// Request only top-level fields by default, or use custom if provided
+	if (args.fields !== undefined && args.fields !== "") {
+		queryParams.fields = args.fields;
+	} else {
+		queryParams.fields = "id,title";
+	}
 	// Map the tool's 'query' param to Wagtail's 'search' API param
-	if (args.query !== undefined) {
+	if (args.query !== undefined && args.query !== "") {
 		queryParams.search = args.query;
 	}
 	// Map the tool's 'locale' param to Wagtail's 'locale' API param
@@ -160,8 +139,7 @@ export const toolCallback = async (
 	}
 	// Map the tool's 'search_operator' param
 	if (args.search_operator !== undefined) {
-		queryParams.search_operator =
-			args.search_operator;
+		queryParams.search_operator = args.search_operator;
 	}
 	// Map other args to query params here
 
@@ -186,12 +164,30 @@ export const toolCallback = async (
 		const totalCount = apiResponse.meta.total_count;
 
 		// 7. Map API response to the desired simpler format
-		const outputItems = apiResponse.items.map((item) => ({
-			id: item.id,
-			slug: item.meta.slug,
-			title: item.title,
-			type: item.meta.type,
-		}));
+		let outputItems;
+		if (args.fields && args.fields.includes('_')) {
+			// Only return fields explicitly requested, suppress all defaults
+			const requestedFields = args.fields.split(',').map(f => f.trim()).filter(f => f && f !== '_');
+			outputItems = apiResponse.items.map((item) => {
+				const flat: Record<string, any> = {};
+				for (const field of requestedFields) {
+					if (field in item) {
+						flat[field] = item[field];
+					} else if (item.meta && field in (item.meta as Record<string, any>)) {
+						flat[field] = (item.meta as Record<string, any>)[field];
+					}
+				}
+				return flat;
+			});
+		} else {
+			// Default mapping (id, slug, title, type)
+			outputItems = apiResponse.items.map((item) => ({
+				id: item.id,
+				slug: item.meta?.slug,
+				title: item.title,
+				type: item.meta?.type,
+			}));
+		}
 
 		// 8. Validate the final structure (optional but good practice)
 		const finalValidation = z.array(OutputPageSchema).safeParse(outputItems);
