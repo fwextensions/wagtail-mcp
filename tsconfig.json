@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2020", // Target modern Node.js versions
-    "module": "CommonJS", // Or "ESNext" if using ESM
+    "module": "NodeNext", // Or "ESNext" if using ESM
     "lib": ["ES2020"],
     "strict": true,
     "esModuleInterop": true,
@@ -11,7 +11,7 @@
     "rootDir": "./src", // Source directory
     "resolveJsonModule": true, // Allow importing JSON files
     "sourceMap": true, // Generate source maps for debugging
-    "moduleResolution": "node"
+    "moduleResolution": "NodeNext"
   },
   "include": ["src/**/*.ts"], // Files to include in compilation
   "exclude": ["node_modules", "**/*.spec.ts"] // Files to exclude
