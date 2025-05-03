@@ -2,37 +2,34 @@ import axios, { AxiosError } from "axios";
 import { z } from "zod";
 import * as dotenv from "dotenv";
 import { zNullToUndefined } from "./zodNullToUndefined";
+// Import FastMCP types
+import type { FastMCP, Tool, Content, Context, ContentResult } from "fastmcp";
+import { UserError } from "fastmcp";
 
 dotenv.config();
 
+// --- Environment Variables ---
+const WAGTAIL_BASE_URL = process.env.WAGTAIL_BASE_URL;
+const WAGTAIL_API_PATH = process.env.WAGTAIL_API_PATH || "/api/v2";
+const WAGTAIL_API_KEY = process.env.WAGTAIL_API_KEY;
+
 // --- Tool Definition ---
-export const name = "search_documents";
-export const description = "Searches for Wagtail documents based on a query string. Allows specifying the search operator (and/or). Returns a list of matching documents with their ID, title, and download URL.";
+const toolName = "search_documents";
+const toolDescription = "Searches for Wagtail documents based on a query string. Allows specifying the search operator (and/or). Returns a list of matching documents with their ID, title, and download URL.";
 
 // --- Input Parameters Schema ---
-export const paramsSchema = {
+// Define the Zod object directly
+const parameters = z.object({
 	query: zNullToUndefined(z.string().min(1)).describe(
 		"The search term to use for finding documents."),
 	search_operator: zNullToUndefined(z.enum(["and", "or"]).optional().default("and")).describe(
 		`The logical operator to use if the query contains multiple terms ('and' or 'or'). Defaults to 'and'.`)
-};
+});
 
-// Define the actual Zod object from the shape for inference
-const ParamsZodObject = z.object(paramsSchema);
+// Type alias for validated arguments
+type SearchDocsArgs = z.infer<typeof parameters>;
 
-// Minimal type for the 'extra' parameter based on SDK expectations
-interface RequestHandlerExtra {
-	signal?: AbortSignal;
-}
-
-// Define the expected return structure for the tool
-interface CallToolResult {
-	[x: string]: unknown; // Add index signature for compatibility
-	content: { type: "text"; text: string; }[];
-	_meta?: { [x: string]: unknown; };
-	isError?: boolean;
-}
-
+// --- Helper Types ---
 // Define the structure of an item in the API response
 interface DocumentApiResponseItem {
 	id: number;
@@ -40,10 +37,8 @@ interface DocumentApiResponseItem {
 		type: string;
 		detail_url: string;
 		download_url: string; // Expecting this
-		// Potentially other meta fields exist
 	};
 	title: string;
-	// Potentially other document fields exist
 }
 
 // Define the structure of the API response
@@ -54,91 +49,134 @@ interface DocumentApiResponse {
 	items: DocumentApiResponseItem[];
 }
 
-// --- Tool Callback Function ---
-export const toolCallback = async (
-	args: z.infer<typeof ParamsZodObject>,
-	extra: RequestHandlerExtra
-): Promise<CallToolResult> => {
-	// 1. Validate Environment Configuration
-	const WAGTAIL_BASE_URL = process.env.WAGTAIL_BASE_URL;
-	const WAGTAIL_API_PATH = process.env.WAGTAIL_API_PATH || "/api/v2";
-	const WAGTAIL_API_KEY = process.env.WAGTAIL_API_KEY;
+// Use a generic context type
+type ToolContext = Context<any>;
+
+// --- Tool Handler (Execute Function) ---
+const execute = async (
+	args: SearchDocsArgs,
+	context: ToolContext
+): Promise<ContentResult> => {
+	context.log.info(`Executing ${toolName} tool with args:`, args);
 
 	if (!WAGTAIL_BASE_URL) {
-		throw new Error("WAGTAIL_BASE_URL environment variable is not set.");
+		context.log.error("WAGTAIL_BASE_URL environment variable is not set.");
+		throw new Error("Server configuration error: WAGTAIL_BASE_URL is not set.");
 	}
 
-	// 2. Construct API URL and Parameters
+	// Construct API URL and Parameters
 	const baseUrl = WAGTAIL_BASE_URL.replace(/\/$/, "");
-	const apiPath = WAGTAIL_API_PATH.startsWith("/")
-		? WAGTAIL_API_PATH.replace(/\/$/, "")
-		: `/${WAGTAIL_API_PATH.replace(/\/$/, "")}`;
-	const apiUrl = `${baseUrl}${apiPath}/documents/`; // Target the documents endpoint
+	const apiBasePath = WAGTAIL_API_PATH.replace(/^\/|\/$/g, "");
+	const apiUrl = `${baseUrl}/${apiBasePath}/documents/`; // Target the documents endpoint
 
 	const queryParams: Record<string, string> = {
-		search: args.query,
+		search: args.query, // query is guaranteed by min(1)
 	};
-	if (args.search_operator) {
-		queryParams.search_operator = args.search_operator;
-	}
-	// Specify desired fields directly in the query if the API supports it,
-	// otherwise we filter *after* getting the response.
-	// Let's filter after for broader compatibility, assuming the API doesn't
-	// have a robust 'fields' parameter for list views like the detail view does.
-	// queryParams.fields = 'id,title,meta(download_url)'; // Ideal, but might not work
+	// search_operator has a default, so it will always be present
+	queryParams.search_operator = args.search_operator;
 
-
-	// 3. Configure Headers
-	const headers: Record<string, string> = {
-		"Accept": "application/json",
-	};
+	// Configure Headers
+	const headers: Record<string, string> = { "Accept": "application/json" };
 	if (WAGTAIL_API_KEY) {
 		headers["Authorization"] = `Bearer ${WAGTAIL_API_KEY}`;
 	}
 
-	// 4. Make API Call
+	context.log.info(`Calling Wagtail API: ${apiUrl}`, { params: queryParams });
+
+	// Make API Call
 	try {
 		const response = await axios.get<DocumentApiResponse>(apiUrl, {
 			headers: headers,
 			params: queryParams,
-			signal: extra.signal, // Pass along abort signal
+			// Omitting signal handling for now, axios might timeout based on config
 		});
 
-		// Basic validation of response
-		if (response.status !== 200 || !response.data || !response.data.items) {
-			throw new Error(
-				`API request failed with status ${response.status} to ${apiUrl}. Response data missing or invalid.`);
+		context.log.info(`Received response from Wagtail API`, { status: response.status });
+
+		// Basic validation of response structure
+		if (!response.data || !response.data.meta || !Array.isArray(response.data.items)) {
+			 let responseSample = "[Unable to stringify response]";
+			 try { responseSample = JSON.stringify(response.data).substring(0, 200); } catch(e){}
+			context.log.error("API response data missing or invalid structure.", { dataSample: responseSample });
+			throw new Error(`API request successful (Status ${response.status}) but response data missing or invalid.`);
 		}
 
-		// 5. Process and Filter Results
-		const filteredItems = response.data.items.map(item => ({
-			id: item.id,
-			title: item.title,
-			download_url: item.meta.download_url // Extract the download URL
-		}));
+		// Process and Filter Results
+		const filteredItems = response.data.items.map(item => {
+			 // Add extra validation if necessary
+			 if (!item || typeof item.id !== 'number' || typeof item.title !== 'string' || !item.meta || typeof item.meta.download_url !== 'string') {
+				 context.log.warn("Skipping item with missing/invalid fields in API response", { itemId: item?.id });
+				 return null; // Mark as null to filter out later
+			 }
+			 return {
+				 id: item.id,
+				 title: item.title,
+				 download_url: item.meta.download_url
+			 };
+		 }).filter(item => item !== null); // Remove null items
 
 		// Format for MCP: content array with a single text item containing stringified JSON
-		const outputJson = JSON.stringify({
-			count: filteredItems.length, // Add count for clarity
-			total_available: response.data.meta.total_count, // From API meta
-			items: filteredItems
-		}, null, 2);
+		let outputJson: string;
+		try {
+			outputJson = JSON.stringify({
+				count: filteredItems.length,
+				total_available: response.data.meta.total_count,
+				items: filteredItems
+			}, null, 2);
+		} catch (stringifyError) {
+			 context.log.error("Failed to stringify processed items", { error: String(stringifyError) });
+			 throw new Error("Failed to format results.");
+		}
 
-		const result: CallToolResult = {
+
+		return {
 			content: [{ type: "text", text: outputJson }],
 		};
-		return result;
 
-	} catch (error: any) {
+	} catch (error: unknown) {
+		 // Log serializable details
+		let errorDetails: Record<string, any> = { message: String(error) };
+		if (axios.isAxiosError(error)) {
+			errorDetails.status = error.response?.status;
+			try {
+				errorDetails.data = JSON.parse(JSON.stringify(error.response?.data ?? null));
+			} catch (parseError) {
+				errorDetails.data = "Error serializing response data";
+			}
+			errorDetails.code = error.code;
+			errorDetails.requestUrl = error.config?.url;
+			errorDetails.requestParams = error.config?.params;
+		}
+		context.log.error(`Error executing ${toolName}`, errorDetails); // Log serializable details
+
+		// Throw appropriate error type
 		if (axios.isAxiosError(error)) {
 			const status = error.response?.status;
-			const errorData = error.response?.data;
-			const message = (errorData as any)?.message || error.message; // Type assertion needed
-			throw new Error(
-				`API request error: ${status} - ${message}. URL: ${apiUrl}, Params: ${JSON.stringify(
-					queryParams)}`);
+			let message = `Wagtail API request failed`;
+			if (status) message += ` with status ${status}`;
+			message += `: ${error.message}`;
+
+			if (status && status >= 400 && status < 500) {
+				// Consider 404 specifically? API might return empty list instead of 404 for no search results.
+				throw new UserError(`Client error calling Wagtail Documents API (Status: ${status}). Check query.`, { detail: message, request: errorDetails });
+			} else {
+				throw new Error(`Server or network error calling Wagtail Documents API: ${message}`);
+			}
+		} else if (error instanceof UserError) {
+			throw error; // Re-throw UserErrors
 		} else {
-			throw new Error(`An unexpected error occurred: ${error.message}`);
+			throw new Error(`An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
 };
+
+// --- Registration Function (Exported) ---
+export function registerTool(server: FastMCP) {
+	// Pass object directly to addTool
+	server.addTool({
+		name: toolName,
+		description: toolDescription,
+		parameters: parameters,
+		execute: execute,
+	});
+}

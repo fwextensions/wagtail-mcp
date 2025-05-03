@@ -2,182 +2,154 @@ import axios, { AxiosError } from "axios";
 import { z } from "zod";
 import { zNullToUndefined } from "./zodNullToUndefined";
 import * as dotenv from "dotenv";
+import type { FastMCP, Tool, Content, Context, ContentResult } from "fastmcp";
+import { UserError } from "fastmcp";
+
+type ToolContext = Context<any>;
 
 dotenv.config();
+const WAGTAIL_BASE_URL = process.env.WAGTAIL_BASE_URL;
+const WAGTAIL_API_PATH = process.env.WAGTAIL_API_PATH || "/api/v2";
+const WAGTAIL_API_KEY = process.env.WAGTAIL_API_KEY;
 
-// --- Tool Definition ---
-export const name = "get_page_details";
-export const description = `Retrieves the full details of a specific Wagtail page by its ID, slug, or URL. Requires at least one parameter. Priority: id > slug > url.
-You can use the optional 'fields' parameter to customize the returned data. Examples:
-- 'body,feed_image': Add 'body' and 'feed_image'.
-- '*,-body': Add all fields except 'body'.
-- '_': Remove all default fields.
-- '_,title,last_published_at': Return only 'title' and 'last_published_at'.`;
+const name = "get_page_details";
+const description = "Retrieves the full details of a specific Wagtail page by its ID, slug, or URL. Requires at least one parameter. Priority: id > slug > url.";
+const parameters = z.object({
+	id: zNullToUndefined(z.number().int().nonnegative().optional().describe("The unique numeric ID of the page.")),
+	slug: zNullToUndefined(z.string().optional().describe("The slug (URL path part) of the page (e.g., \"about-us/team\").")),
+	url: zNullToUndefined(z.string().url().optional().describe("The full public URL of the page.")),
+	fields: zNullToUndefined(z.string().optional().describe("Optional comma-separated list to control returned fields (e.g., \"body,feed_image\", \"*,-title\", \"_,my_field\"). See Wagtail API docs for details.")),
+}).refine(data => data.id !== undefined || data.slug !== undefined || data.url !== undefined, {
+	message: "At least one of 'id', 'slug', or 'url' must be provided.",
+});
 
-// --- Input Parameters Schema --- 
-// Define as a plain object with Zod validators (ZodRawShape)
-// This raw shape format is required by McpServer.tool()
-export const paramsSchema = {
-	id: zNullToUndefined(z.number().int().positive().optional()).describe(
-		"The unique numeric ID of the page."),
-	slug: zNullToUndefined(z.string().optional()).describe(
-		"The slug (URL path part) of the page (e.g., \"about-us/team\")."),
-	url: zNullToUndefined(z.string().url().optional()).describe("The full public URL of the page."),
-	fields: zNullToUndefined(z.string().optional()).describe(
-		"Optional comma-separated list to control returned fields (e.g., \"body,feed_image\", \"*,-title\", \"_,my_field\"). See Wagtail API docs for details.")
-};
+type GetPageDetailsArgs = z.infer<typeof parameters>;
+type WagtailPageDetailResponse = Record<string, any>;
 
-// Define the actual Zod object from the shape for inference
-const ParamsZodObject = z.object(paramsSchema);
+const execute = async (
+	args: GetPageDetailsArgs,
+	context: ToolContext
+): Promise<ContentResult> => {
+	context.log.info(`Executing ${name} tool with args:`, args);
 
-// Minimal type for the 'extra' parameter based on SDK expectations
-interface RequestHandlerExtra {
-	signal?: AbortSignal;
-}
-
-// Define the expected return structure
-interface CallToolResult {
-	[x: string]: unknown; // Index signature
-	content: {
-		type: "text";
-		text: string;
-	}[];
-	_meta?: { [x: string]: unknown; };
-	isError?: boolean;
-}
-
-// --- Tool Callback Function ---
-// Define the callback signature directly
-export const toolCallback = async (
-	// Explicitly type args using the Zod object derived from the shape
-	args: z.infer<typeof ParamsZodObject>,
-	// Use the minimal RequestHandlerExtra type
-	extra: RequestHandlerExtra
-	// Explicitly type the return Promise
-): Promise<CallToolResult> => {
-	// Validate that at least one parameter is provided
-	if (args.id === undefined && args.slug === undefined && args.url ===
-		undefined) {
-		throw new Error("At least one of \"id\", \"slug\", or \"url\" must be provided.");
-	}
-
-	// --- Modification: Ignore id if it's 0 ---
-	if (args.id === 0) {
-		args.id = undefined;
-		// Re-validate if other parameters exist after ignoring id=0
-		if (args.slug === undefined && args.url === undefined) {
-			throw new Error(
-				"At least one of \"slug\" or \"url\" must be provided when id is 0.");
+	let effectiveArgs = { ...args };
+	if (effectiveArgs.id === 0) {
+		context.log.info("Received id=0, treating as undefined.");
+		effectiveArgs.id = undefined;
+		if (effectiveArgs.slug === undefined && effectiveArgs.url === undefined) {
+			throw new UserError("At least one valid 'id' (non-zero), 'slug', or 'url' must be provided.");
 		}
 	}
-	// ----------------------------------------
-
-	// 1. Validate Environment Configuration
-	const WAGTAIL_BASE_URL = process.env.WAGTAIL_BASE_URL;
-	const WAGTAIL_API_PATH = process.env.WAGTAIL_API_PATH || "/api/v2"; // Default API path
-	const WAGTAIL_API_KEY = process.env.WAGTAIL_API_KEY;
-
 	if (!WAGTAIL_BASE_URL) {
-		throw new Error("WAGTAIL_BASE_URL environment variable is not set.");
+		context.log.error("WAGTAIL_BASE_URL environment variable is not set.");
+		throw new Error("Server configuration error: WAGTAIL_BASE_URL is not set.");
 	}
 
-	// 2. Determine API Endpoint and Parameters based on input priority (id > slug > url)
+	const apiBasePath = WAGTAIL_API_PATH.replace(/^\/|\/$/g, "");
 	let apiEndpoint = "";
-	let queryParams: Record<string, any> = {}; // Initialize empty query params
+	const queryParams: Record<string, string | number> = {};
 
-	if (args.id !== undefined) {
-		// Construct the endpoint specific to ID lookup
-		apiEndpoint = `/pages/${args.id}/`;
-		// No queryParams needed for ID lookup, but fields might be
-	} else if (args.slug !== undefined) {
-		// Construct the endpoint specific to find lookup
-		apiEndpoint = `/pages/find/`;
-		queryParams.html_path = args.slug;
-	} else if (args.url !== undefined) {
-		// Construct the endpoint specific to find lookup
-		apiEndpoint = `/pages/find/`;
+	if (effectiveArgs.id !== undefined) {
+		apiEndpoint = `/${apiBasePath}/pages/${effectiveArgs.id}/`;
+		context.log.info(`Looking up page by ID: ${effectiveArgs.id}`);
+	} else if (effectiveArgs.slug !== undefined) {
+		apiEndpoint = `/${apiBasePath}/pages/find/`;
+		queryParams.html_path = effectiveArgs.slug;
+		context.log.info(`Looking up page by slug: ${effectiveArgs.slug}`);
+	} else if (effectiveArgs.url !== undefined) {
+		apiEndpoint = `/${apiBasePath}/pages/find/`;
 		try {
-			const parsedUrl = new URL(args.url);
-			// Remove leading/trailing slashes from pathname for consistency
+			const parsedUrl = new URL(effectiveArgs.url);
 			queryParams.html_path = parsedUrl.pathname.replace(/^\/|\/$/g, "");
+			context.log.info(`Looking up page by URL path: ${queryParams.html_path}`);
 		} catch (e) {
-			throw new Error(`Invalid URL provided: ${args.url}`);
+			context.log.error(`Invalid URL provided: ${effectiveArgs.url}`, { error: String(e) });
+			throw new UserError(`Invalid URL format provided: ${effectiveArgs.url}`);
 		}
 	} else {
-		// This case should theoretically be caught by the Zod refinement,
-		// but it's good practice to handle it defensively.
-		throw new Error(
-			"Internal error: No valid parameter found despite schema validation.");
+		context.log.error("Internal error: No valid parameter found despite schema validation.");
+		throw new Error("Internal error: No valid parameter found.");
 	}
 
-	// Add fields parameter if provided
-	if (args.fields) {
-		queryParams.fields = args.fields;
+	if (effectiveArgs.fields !== undefined) {
+		queryParams.fields = effectiveArgs.fields;
+		context.log.info(`Requesting specific fields: ${effectiveArgs.fields}`);
+	} else {
+		context.log.info("Requesting default fields.");
 	}
 
-	// Construct the final API URL robustly handling slashes
-	const baseUrl = WAGTAIL_BASE_URL.replace(/\/$/, ""); // Remove trailing slash from base URL
-	const apiPath = WAGTAIL_API_PATH.startsWith("/") // Ensure API path starts with a slash
-		? WAGTAIL_API_PATH.replace(/\/$/, "") // Remove trailing slash from API path
-		: `/${WAGTAIL_API_PATH.replace(/\/$/, "")}`;
-
-	// Ensure the specific endpoint starts with a slash (it should from the logic above)
-	const fullApiPath = apiEndpoint.startsWith("/") ? apiEndpoint :
-		`/${apiEndpoint}`;
-
-	const apiUrl = `${baseUrl}${apiPath}${fullApiPath}`;
-
-	// 3. Configure Headers
-	const headers: Record<string, string> = {
-		"Accept": "application/json",
-	};
+	const baseUrl = WAGTAIL_BASE_URL.replace(/\/$/, "");
+	const apiUrl = `${baseUrl}${apiEndpoint}`;
+	const headers: Record<string, string> = { "Accept": "application/json" };
 	if (WAGTAIL_API_KEY) {
 		headers["Authorization"] = `Bearer ${WAGTAIL_API_KEY}`;
 	}
 
-	// 4. Make API Call
-	try {
-		const response = await axios.get(apiUrl, {
-			headers: headers,
-			params: queryParams,
-		});
+	context.log.info(`Calling Wagtail API: ${apiUrl}`, { params: queryParams });
 
-		// Basic validation of response
-		if (response.status !== 200 || !response.data) {
-			throw new Error(
-				`API request failed with status ${response.status} to ${apiUrl}`);
+	try {
+		const response = await axios.get<WagtailPageDetailResponse>(apiUrl, { params: queryParams, headers });
+		context.log.info(`Received response from Wagtail API`, { status: response.status });
+
+		if (!response.data) {
+			context.log.error("Received empty response data from API.");
+			throw new Error("API returned empty data.");
 		}
 
-		// 5. Return Full JSON Response (as requested for now)
-		// Format for MCP: content array with a single text item containing stringified JSON
-		const outputJson = JSON.stringify(response.data, null, 2);
+		let outputJson: string;
+		try {
+			outputJson = JSON.stringify(response.data, null, 2);
+		} catch (stringifyError) {
+			context.log.error("Failed to stringify API response data", { error: String(stringifyError) });
+			throw new Error("Failed to format API response.");
+		}
 
-		// Map to CallToolResult format
-		const result: CallToolResult = {
+		return {
 			content: [{ type: "text", text: outputJson }],
 		};
-		return result;
 
-	} catch (error: any) {
+	} catch (error: unknown) {
+		let errorDetails: Record<string, any> = { message: String(error) };
 		if (axios.isAxiosError(error)) {
-			// Handle Axios-specific errors (e.g., network error, 404 Not Found)
-			const status = error.response?.status;
-			const errorData = error.response?.data;
-			const message = errorData?.message || error.message; // Use API message if available
-
-			// Provide more specific error messages
-			if (status === 404) {
-				throw new Error(
-					`Page not found at Wagtail API. URL: ${apiUrl}, Params: ${JSON.stringify(
-						queryParams)}. Error: ${message}`);
-			} else {
-				throw new Error(
-					`API request error: ${status} - ${message}. URL: ${apiUrl}, Params: ${JSON.stringify(
-						queryParams)}`);
+			errorDetails.status = error.response?.status;
+			try {
+				errorDetails.data = JSON.parse(JSON.stringify(error.response?.data ?? null));
+			} catch (parseError) {
+				errorDetails.data = "Error serializing response data";
 			}
+			errorDetails.code = error.code;
+			errorDetails.requestUrl = error.config?.url;
+			errorDetails.requestParams = error.config?.params;
+		}
+		context.log.error(`Error executing ${name}`, errorDetails);
+
+		if (axios.isAxiosError(error)) {
+			const status = error.response?.status;
+			let message = `Wagtail API request failed`;
+			if (status) message += ` with status ${status}`;
+			message += `: ${error.message}`;
+
+			if (status === 404) {
+				const identifier = effectiveArgs.id ?? effectiveArgs.slug ?? effectiveArgs.url;
+				throw new UserError(`Page not found for identifier: ${identifier}`);
+			} else if (status && status >= 400 && status < 500) {
+				throw new UserError(`Client error calling Wagtail API (Status: ${status}). Check parameters.`, { detail: message, request: errorDetails });
+			} else {
+				throw new Error(`Server or network error calling Wagtail API: ${message}`);
+			}
+		} else if (error instanceof UserError) {
+			throw error;
 		} else {
-			// Handle other errors (e.g., URL parsing, validation)
-			throw new Error(`An unexpected error occurred: ${error.message}`);
+			throw new Error(`An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
 };
+
+export function registerTool(server: FastMCP) {
+	server.addTool({
+		name,
+		description,
+		parameters,
+		execute,
+	});
+}

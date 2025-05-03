@@ -1,246 +1,206 @@
-import { z } from "zod";
 import axios, { AxiosError } from "axios";
 import * as dotenv from "dotenv";
 import { zNullToUndefined } from "./zodNullToUndefined";
-
-// Attempt to import the result type, or define below if it fails
-// import { CallToolResultContent } from '@modelcontextprotocol/sdk/types.js'; // Common types might be here
+// Import FastMCP types
+import type { FastMCP, Tool, Content, Context, ContentResult } from "fastmcp"; // Added ContentResult
+import { UserError } from "fastmcp"; // Removed FastMCPLog
+import { z } from "zod";
 
 dotenv.config();
 
-// --- Configuration ---
+// --- Environment Variables ---
 const WAGTAIL_BASE_URL = process.env.WAGTAIL_BASE_URL;
-const WAGTAIL_API_PATH = process.env.WAGTAIL_API_PATH || "/api/v2/";
+const WAGTAIL_API_PATH = process.env.WAGTAIL_API_PATH || "/api/v2";
 const WAGTAIL_API_KEY = process.env.WAGTAIL_API_KEY;
 
 // --- Tool Definition ---
+const toolName = "search_pages";
+const toolDescription = "Searches pages from the Wagtail CMS API based on a query.\nAllows filtering by type, locale, and controlling the search operator. Supports pagination.";
 
-export const name = "search_pages";
-export const description = `Searches pages from the Wagtail CMS API based on a query.
-Allows filtering by type, locale, and controlling the search operator. Supports pagination.`;
+// --- Input Parameters Schema ---
+const parameters = z.object({
+	query: z.string().describe("Query term to search pages. This is required."),
+	type: z.string().optional().describe("Filter by page type (e.g., blog.BlogPage)."),
+	locale: z.string().default("en").describe("The locale code (e.g., en, es) to filter pages by. Defaults to en."),
+	limit: z.number().int().positive().default(50).describe("Maximum number of pages to return."),
+	offset: z.number().int().nonnegative().optional().describe("Offset for pagination."),
+	search_operator: z.enum(["and", "or"]).optional().describe("Search operator for multiple terms (\"and\" or \"or\"). Defaults based on Wagtail search backend."),
+}).refine(data => data.query !== undefined && data.query.trim() !== '', {
+	message: "The 'query' parameter is required and cannot be empty.",
+	path: ["query"], // Specify the path of the error
+});
 
-// Define the Zod *shape* for the tool's parameters (not the object instance)
-export const paramsSchema = {
-	query: zNullToUndefined(z.string().optional()).describe("Query term to search pages. If omitted, results can be filtered by type only."),
-	type: zNullToUndefined(z.string().optional()).describe("Filter by page type (e.g., blog.BlogPage). Can be used without query."),
-	fields: zNullToUndefined(z.string().optional()).describe("Optional comma-separated list to control returned fields (e.g., 'body,feed_image', '*,-title', '_,my_field'). See Wagtail API docs for details."),
-	limit: zNullToUndefined(z.number().int().positive().optional().default(50)).describe("Maximum number of pages to return."),
-	offset: zNullToUndefined(z.number().int().nonnegative().optional()).describe("Offset for pagination."),
-	locale: zNullToUndefined(z.string().optional().default("en")).describe("The locale code (e.g., en, es) to filter pages by. Defaults to en."),
-	search_operator: zNullToUndefined(z.enum(["and", "or"]).optional()).describe("Search operator for multiple terms ('and' or 'or'). Defaults based on Wagtail search backend."),
-};
+// Type alias for validated arguments
+type SearchPagesArgs = z.infer<typeof parameters>;
 
-// Define the actual Zod object from the shape for inference
-const ParamsZodObject = z.object(paramsSchema);
-
-// Minimal type for the 'extra' parameter based on error messages
-// The MCP SDK likely expects this structure internally
-interface RequestHandlerExtra {
-	signal?: AbortSignal; // Make optional for flexibility if not always present
-	// Add other properties if future errors indicate they are needed
+// --- Helper Types ---
+// Basic structure expected from Wagtail API (adjust as needed)
+interface WagtailPageItem {
+	id: number;
+	meta: {
+		type: string;
+		detail_url: string;
+		html_url: string | null;
+		slug: string;
+		first_published_at: string | null;
+		locale?: string; // Add if locale is expected
+	};
+	title: string;
+	// Add other potential fields returned by default or requested via 'fields'
+	[key: string]: any; // Allow other fields
 }
 
-// Define the expected structure of a single page item RETURNED BY THIS TOOL
+interface WagtailPagesApiResponse {
+	meta: {
+		total_count: number;
+	};
+	items: WagtailPageItem[];
+}
+
+// Expected output structure for each page item
 const OutputPageSchema = z.object({
 	id: z.number(),
-	slug: z.string(),
-	title: z.string(),
 	type: z.string(),
+	locale: z.string().optional(), // Make optional if not always present
+	title: z.string(),
+	slug: z.string(),
+	url: z.string().url().nullable(),
+	detail_api_url: z.string().url(),
 });
+type OutputPage = z.infer<typeof OutputPageSchema>;
 
-// Define the expected structure of a single page item FROM THE WAGTAIL API
-// (Adjust based on your actual Wagtail Page model and API fields)
-const WagtailApiPageSchema = z.object({
-	id: z.number(),
-	meta: z.object({
-		type: z.string().optional(),
-		slug: z.string().optional(),
-	}).optional(),
-	title: z.string().optional(),
-	// Allow other fields from API, but we won't return them
-}).passthrough();
-
-// Define the expected structure of the Wagtail API response for listing pages
-const WagtailApiResponseSchema = z.object({
-	meta: z.object({
-		total_count: z.number(),
-	}),
-	items: z.array(WagtailApiPageSchema),
-});
-
-// Define the structure expected by the server based on SDK/error messages
-// Corresponds to CallToolResult implicitly expected by server.tool()
-interface CallToolResult {
-	[x: string]: unknown;
-
-	content: {
-		type: "text";
-		text: string;
-	}[];
-	_meta?: { [x: string]: unknown; };
-	isError?: boolean; // Optional error flag
-}
+// Use a generic context type for simplicity if auth isn't used
+type ToolContext = Context<any>;
 
 // --- Tool Handler ---
+const execute = async (
+	args: SearchPagesArgs, // Explicitly typed args
+	context: ToolContext
+): Promise<ContentResult> => { // Return ContentResult
+	context.log.info(`Executing ${toolName} tool with args:`, args);
 
-// Define the callback signature directly
-export const toolCallback = async (
-	// Explicitly type args using the Zod object derived from the shape
-	args: z.infer<typeof ParamsZodObject>,
-	// Use the minimal RequestHandlerExtra type
-	extra: RequestHandlerExtra
-	// Explicitly type the return Promise
-): Promise<CallToolResult> => {
-	// 1. Validate Environment Configuration
 	if (!WAGTAIL_BASE_URL) {
-		throw new Error("WAGTAIL_BASE_URL environment variable is not set.");
+		context.log.error("WAGTAIL_BASE_URL environment variable is not set.");
+		throw new Error("Server configuration error: WAGTAIL_BASE_URL is not set.");
 	}
 
-	// 2. Construct API URL
+	// Construct API URL and Query Params
+	const apiBasePath = WAGTAIL_API_PATH.replace(/^\/|\/$/g, "");
+	const apiEndpoint = `/${apiBasePath}/pages/`;
 	const baseUrl = WAGTAIL_BASE_URL.replace(/\/$/, "");
-	const apiPath = WAGTAIL_API_PATH.startsWith("/")
-		? WAGTAIL_API_PATH
-		: `/${WAGTAIL_API_PATH}`;
-	const pagesEndpoint = apiPath.endsWith("/") ? "pages/" : "/pages/";
-	const apiUrl = `${baseUrl}${apiPath}${pagesEndpoint}`;
+	const apiUrl = `${baseUrl}${apiEndpoint}`;
 
-	// 3. Prepare Headers
-	const headers: Record<string, string> = {
-		Accept: "application/json",
+	const queryParams: Record<string, string | number> = {
+		search: args.query!, // Assert non-null as it's validated by refine
+		limit: args.limit,
 	};
+	if (args.type !== undefined) queryParams.type = args.type;
+	if (args.locale !== undefined) queryParams.locale = args.locale;
+	if (args.offset !== undefined) queryParams.offset = args.offset;
+	if (args.search_operator !== undefined) queryParams.search_operator = args.search_operator;
+
+	const headers: Record<string, string> = { "Accept": "application/json" };
 	if (WAGTAIL_API_KEY) {
 		headers["Authorization"] = `Bearer ${WAGTAIL_API_KEY}`;
 	}
 
-	// 4. Prepare Query Params from validated Tool Args
-	const queryParams: Record<string, any> = {};
-	if (args.limit !== undefined) {
-		queryParams.limit = args.limit;
-	}
-	if (args.offset !== undefined) {
-		queryParams.offset = args.offset;
-	}
-	if (args.type !== undefined) {
-		queryParams.type = args.type;
-	}
-	// Request only top-level fields by default, or use custom if provided
-	if (args.fields !== undefined && args.fields !== "") {
-		queryParams.fields = args.fields;
-	} else {
-		queryParams.fields = "id,title";
-	}
-	// Map the tool's 'query' param to Wagtail's 'search' API param
-	if (args.query !== undefined && args.query !== "") {
-		queryParams.search = args.query;
-	}
-	// Map the tool's 'locale' param to Wagtail's 'locale' API param
-	if (args.locale !== undefined) {
-		queryParams.locale = args.locale;
-	}
-	// Map the tool's 'search_operator' param
-	if (args.search_operator !== undefined) {
-		queryParams.search_operator = args.search_operator;
-	}
-	// Map other args to query params here
+	context.log.info(`Calling Wagtail API: ${apiUrl}`, { params: queryParams });
 
-	// 5. Make API Call
 	try {
-		const response = await axios.get(apiUrl, {
-			headers: headers,
-			params: queryParams,
-		});
+		const response = await axios.get<WagtailPagesApiResponse>(apiUrl, { params: queryParams, headers });
+		context.log.info(`Received response from Wagtail API`, { status: response.status });
 
-		// 6. Validate API Response
-		const validationResult = WagtailApiResponseSchema.safeParse(response.data);
-		if (!validationResult.success) {
-			console.error("Wagtail API response validation failed:",
-				validationResult.error);
-			throw new Error(
-				`Received invalid data structure from Wagtail API: ${validationResult.error.message}`
-			);
+		const results = response.data;
+		if (!results || !results.meta || results.items === undefined) {
+			// Stringify potentially non-serializable results for logging
+			let resultsString = "[Unable to stringify results]";
+			try {
+				resultsString = JSON.stringify(results);
+			} catch (e) { /* Ignore stringify error */ }
+			context.log.error("Received invalid or incomplete data structure from Wagtail API.", { dataString: resultsString });
+			throw new Error("Received invalid data structure from Wagtail API.");
 		}
 
-		const apiResponse = validationResult.data;
-		const totalCount = apiResponse.meta.total_count;
+		// Map API response to the desired simpler format
+		let outputItems: OutputPage[];
+		outputItems = results.items.map(item => ({
+			id: item.id,
+			type: item.meta.type,
+			locale: item.meta.locale,
+			title: item.title,
+			slug: item.meta.slug,
+			url: item.meta.html_url,
+			detail_api_url: item.meta.detail_url,
+			// Include other fields if they are part of the default response and needed
+		}));
 
-		// 7. Map API response to the desired simpler format
-		let outputItems;
-		if (args.fields && args.fields.includes('_')) {
-			// Only return fields explicitly requested, suppress all defaults
-			const requestedFields = args.fields.split(',').map(f => f.trim()).filter(f => f && f !== '_');
-			outputItems = apiResponse.items.map((item) => {
-				const flat: Record<string, any> = {};
-				for (const field of requestedFields) {
-					if (field in item) {
-						flat[field] = item[field];
-					} else if (item.meta && field in (item.meta as Record<string, any>)) {
-						flat[field] = (item.meta as Record<string, any>)[field];
-					}
-				}
-				return flat;
-			});
-		} else {
-			// Default mapping (id, slug, title, type)
-			outputItems = apiResponse.items.map((item) => ({
-				id: item.id,
-				slug: item.meta?.slug,
-				title: item.title,
-				type: item.meta?.type,
-			}));
+		// Prepare JSON output
+		let outputJson: string;
+		try {
+			 // Validate final structure before stringifying (optional but recommended)
+			const finalValidation = z.array(OutputPageSchema).safeParse(outputItems);
+			if (!finalValidation.success) {
+				context.log.warn("Final mapped output validation failed:", finalValidation.error.format());
+				 // Decide how to handle: throw, return partial, return empty? Returning for now.
+			}
+			outputJson = JSON.stringify(
+				 {
+					 count: results.meta.total_count,
+					 items: finalValidation.success ? finalValidation.data : outputItems // Use validated data if possible
+				 }, null, 2);
+		} catch (stringifyError) {
+			context.log.error("Failed to stringify API response data", { error: String(stringifyError) });
+			throw new Error("Failed to format API response.");
 		}
 
-		// 8. Validate the final structure (optional but good practice)
-		const finalValidation = z.array(OutputPageSchema).safeParse(outputItems);
-		if (!finalValidation.success) {
-			console.error("Final response validation failed:", finalValidation.error);
-			// Decide how to handle this - log, throw, or return potentially incorrect data?
-			// For now, we'll log and proceed, but ideally, this shouldn't happen if mapping is correct.
-		}
-
-		// 9. Map to CallToolResult format
-		const result: CallToolResult = {
-			content: [
-				// Ensure content item matches the defined structure
-				{
-					type: "text", text: JSON.stringify({
-						count: outputItems.length,
-						total_count: totalCount,
-						items: outputItems // Use the mapped array
-					}, null, 2)
-				},
-			],
+		// Return ContentResult structure
+		return {
+			content: [{ type: "text", text: outputJson }], // No backticks
 		};
-		return result;
-	} catch (error) {
-		console.error(`Error in ${name} tool:`, error);
 
+	} catch (error: unknown) {
+		// Log serializable details
+		let errorDetails: Record<string, any> = { message: String(error) };
 		if (axios.isAxiosError(error)) {
-			const axiosError = error as AxiosError;
-			const status = axiosError.response?.status;
-			const errorData = axiosError.response?.data;
-			const errorMessage = `Wagtail API request failed with status ${status}: ${JSON.stringify(
-				errorData)}`;
-			// Construct error response matching CallToolResult structure
-			const errorResult: CallToolResult = {
-				isError: true,
-				content: [
-					// Ensure content item matches the defined structure
-					{ type: "text", text: errorMessage },
-				],
-			};
-			return errorResult;
+			errorDetails.status = error.response?.status;
+			try {
+				errorDetails.data = JSON.parse(JSON.stringify(error.response?.data ?? null));
+			} catch (parseError) {
+				errorDetails.data = "Error serializing response data";
+			}
+			errorDetails.code = error.code;
+			errorDetails.requestUrl = error.config?.url;
+			errorDetails.requestParams = error.config?.params;
 		}
+		context.log.error(`Error executing ${toolName}`, errorDetails);
 
-		const errorMessage = `An unexpected error occurred: ${error instanceof
-		Error ? error.message : String(error)}`;
-		// Construct error response matching CallToolResult structure
-		const errorResult: CallToolResult = {
-			isError: true,
-			content: [
-				// Ensure content item matches the defined structure
-				{ type: "text", text: errorMessage },
-			],
-		};
-		return errorResult;
+		// Throw appropriate error type
+		if (axios.isAxiosError(error)) {
+			const status = error.response?.status;
+			let message = `Wagtail API request failed`;
+			if (status) message += ` with status ${status}`;
+			message += `: ${error.message}`;
+
+			if (status && status >= 400 && status < 500) {
+				throw new UserError(`Client error calling Wagtail API (Status: ${status}). Check query or parameters.`, { detail: message, request: errorDetails });
+			} else {
+				throw new Error(`Server or network error calling Wagtail API: ${message}`);
+			}
+		} else if (error instanceof UserError) {
+			throw error;
+		} else {
+			throw new Error(`An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
 };
+
+// --- Registration Function ---
+export function registerTool(server: FastMCP) {
+	// Pass object directly to addTool
+	server.addTool({
+		name: toolName,
+		description: toolDescription,
+		parameters: parameters,
+		execute: execute,
+	});
+}
