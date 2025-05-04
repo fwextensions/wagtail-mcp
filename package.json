@@ -9,9 +9,8 @@
   "scripts": {
     "build": "tsc",
     "start": "npm run build && node dist/server.js",
-    "dev": "nodemon -q --exec ts-node src/server.ts -e ts",
-    "inspect": "npx -y @modelcontextprotocol/inspector node --watch -r ts-node/register src/server.ts",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "tsx watch src/server.ts",
+    "inspect": "npx -y @modelcontextprotocol/inspector tsx src/server.ts",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },
@@ -28,14 +27,12 @@
     "axios": "^1.9.0",
     "dotenv": "^16.5.0",
     "fastmcp": "^1.23.2",
-    "zod": "^3.24.3",
-    "zod-to-json-schema": "^3.24.5"
+    "zod": "^3.24.3"
   },
   "devDependencies": {
     "@tsconfig/node22": "^22.0.1",
     "@types/node": "^22.15.3",
-    "nodemon": "^3.1.10",
-    "ts-node": "^10.9.2",
+    "tsx": "^4.16.2",
     "typescript": "^5.8.3"
   }
 }
