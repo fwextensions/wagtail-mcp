@@ -1,7 +1,22 @@
 {
   "name": "wagtail-mcp",
   "version": "0.0.1",
-  "description": "An MCP server for read-only access to Wagtail CMS using @modelcontextprotocol/sdk",
+  "description": "Read-only access to a Wagtail CMS using the MCP protocol",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "wagtail",
+    "cms",
+    "llm",
+    "ai"
+  ],
+  "author": "John Dunning",
+  "license": "MIT",
+  "homepage": "https://github.com/fwextensions/wagtail-mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fwextensions/wagtail-mcp.git"
+  },
   "main": "dist/server.js",
   "bin": {
     "wagtail-mcp": "./dist/server.js"
@@ -18,15 +33,6 @@
     "prepublishOnly": "npm run build",
     "postinstall": "patch-package"
   },
-  "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "wagtail",
-    "cms",
-    "ai"
-  ],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
     "axios": "^1.9.0",
     "fastmcp": "^1.24.0",

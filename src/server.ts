@@ -63,9 +63,6 @@ async function main() {
 	} catch (error) {
 		console.error("Failed to start server:", error);
 		process.exit(1);
-	} finally {
-		// console.error("Server shutdown sequence initiated.");
-		// Removed server.close() as it doesn't exist
 	}
 
 	// --- Graceful Shutdown Handling (FastMCP might handle some signals) ---
