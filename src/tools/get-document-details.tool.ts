@@ -1,16 +1,8 @@
-import axios, { AxiosError } from "axios";
+import axios from "axios";
 import { z } from "zod";
-import * as dotenv from "dotenv";
-import { zNullToUndefined } from "./zodNullToUndefined";
-import type { FastMCP, Tool, Context, ContentResult } from "fastmcp";
+import { getWagtailApiUrl, getWagtailApiKey } from "@/utils/config";
+import type { FastMCP, Context, ContentResult } from "fastmcp";
 import { UserError } from "fastmcp";
-
-dotenv.config();
-
-// --- Environment Variables ---
-const WAGTAIL_BASE_URL = process.env.WAGTAIL_BASE_URL;
-const WAGTAIL_API_PATH = process.env.WAGTAIL_API_PATH || "/api/v2";
-const WAGTAIL_API_KEY = process.env.WAGTAIL_API_KEY;
 
 // --- Tool Definition ---
 const toolName = "get_document_details";
@@ -45,33 +37,22 @@ const execute = async (
 ): Promise<ContentResult> => {
 	context.log.info(`Executing ${toolName} tool with args:`, args);
 
-	if (!WAGTAIL_BASE_URL) {
-		context.log.error("WAGTAIL_BASE_URL environment variable is not set.");
-		throw new Error("Server configuration error: WAGTAIL_BASE_URL is not set.");
-	}
-	if (!args.id) {
-		 throw new UserError("Missing required parameter: id");
-	}
-
-
 	// Construct API URL
-	const baseUrl = WAGTAIL_BASE_URL.replace(/\/$/, "");
-	const apiBasePath = WAGTAIL_API_PATH.replace(/^\/|\/$/g, "");
-	const apiUrl = `${baseUrl}/${apiBasePath}/documents/${args.id}/`; 
+	const specificPath = `/documents/${args.id}/`;
+	const apiUrl = getWagtailApiUrl(specificPath);
 
 	// Configure Headers
 	const headers: Record<string, string> = { "Accept": "application/json" };
-	if (WAGTAIL_API_KEY) {
-		headers["Authorization"] = `Bearer ${WAGTAIL_API_KEY}`;
+	const apiKey = getWagtailApiKey();
+	if (apiKey) {
+		headers["Authorization"] = `Bearer ${apiKey}`;
 	}
 
 	context.log.info(`Calling Wagtail API: ${apiUrl}`);
 
 	// Make API Call
 	try {
-		const response = await axios.get<DocumentDetailApiResponse>(apiUrl, {
-			headers: headers,
-		});
+		const response = await axios.get<DocumentDetailApiResponse>(apiUrl, { headers });
 
 		context.log.info(`Received response from Wagtail API`, { status: response.status });
 

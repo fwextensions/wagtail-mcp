@@ -1,17 +1,10 @@
-import axios, { AxiosError } from "axios";
-import * as dotenv from "dotenv";
-import { zNullToUndefined } from "./zodNullToUndefined";
-// Import FastMCP types
-import type { FastMCP, Tool, Content, Context, ContentResult } from "fastmcp"; // Added ContentResult
-import { UserError } from "fastmcp"; // Removed FastMCPLog
+import axios from "axios";
 import { z } from "zod";
 
-dotenv.config();
+import type { FastMCP, Context, ContentResult } from "fastmcp"; 
+import { UserError } from "fastmcp"; 
 
-// --- Environment Variables ---
-const WAGTAIL_BASE_URL = process.env.WAGTAIL_BASE_URL;
-const WAGTAIL_API_PATH = process.env.WAGTAIL_API_PATH || "/api/v2";
-const WAGTAIL_API_KEY = process.env.WAGTAIL_API_KEY;
+import { getWagtailApiUrl, getWagtailApiKey } from "@/utils/config";
 
 // --- Tool Definition ---
 const toolName = "search_pages";
@@ -74,22 +67,12 @@ type ToolContext = Context<any>;
 
 // --- Tool Handler ---
 const execute = async (
-	args: SearchPagesArgs, // Explicitly typed args
+	args: SearchPagesArgs, 
 	context: ToolContext
-): Promise<ContentResult> => { // Return ContentResult
+): Promise<ContentResult> => { 
 	context.log.info(`Executing ${toolName} tool with args:`, args);
 
-	if (!WAGTAIL_BASE_URL) {
-		context.log.error("WAGTAIL_BASE_URL environment variable is not set.");
-		throw new Error("Server configuration error: WAGTAIL_BASE_URL is not set.");
-	}
-
-	// Construct API URL and Query Params
-	const apiBasePath = WAGTAIL_API_PATH.replace(/^\/|\/$/g, "");
-	const apiEndpoint = `/${apiBasePath}/pages/`;
-	const baseUrl = WAGTAIL_BASE_URL.replace(/\/$/, "");
-	const apiUrl = `${baseUrl}${apiEndpoint}`;
-
+	// Configure Query Params
 	const queryParams: Record<string, string | number> = {
 		search: args.query!, // Assert non-null as it's validated by refine
 		limit: args.limit,
@@ -99,15 +82,21 @@ const execute = async (
 	if (args.offset !== undefined) queryParams.offset = args.offset;
 	if (args.search_operator !== undefined) queryParams.search_operator = args.search_operator;
 
+	// Construct API URL using the config function
+	const specificPath = "/pages/";
+	const apiUrl = getWagtailApiUrl(specificPath, queryParams);
+
+	// Configure Headers using the config function
 	const headers: Record<string, string> = { "Accept": "application/json" };
-	if (WAGTAIL_API_KEY) {
-		headers["Authorization"] = `Bearer ${WAGTAIL_API_KEY}`;
+	const apiKey = getWagtailApiKey();
+	if (apiKey) {
+		headers["Authorization"] = `Bearer ${apiKey}`;
 	}
 
 	context.log.info(`Calling Wagtail API: ${apiUrl}`, { params: queryParams });
 
 	try {
-		const response = await axios.get<WagtailPagesApiResponse>(apiUrl, { params: queryParams, headers });
+		const response = await axios.get<WagtailPagesApiResponse>(apiUrl, { headers });
 		context.log.info(`Received response from Wagtail API`, { status: response.status });
 
 		const results = response.data;

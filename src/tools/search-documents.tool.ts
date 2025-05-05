@@ -1,17 +1,9 @@
-import axios, { AxiosError } from "axios";
+import axios from "axios";
 import { z } from "zod";
-import * as dotenv from "dotenv";
-import { zNullToUndefined } from "./zodNullToUndefined";
-// Import FastMCP types
-import type { FastMCP, Tool, Content, Context, ContentResult } from "fastmcp";
+import { zNullToUndefined } from "@/utils/zodNullToUndefined";
+import { getWagtailApiUrl, getWagtailApiKey } from "@/utils/config";
+import type { FastMCP, Context, ContentResult } from "fastmcp";
 import { UserError } from "fastmcp";
-
-dotenv.config();
-
-// --- Environment Variables ---
-const WAGTAIL_BASE_URL = process.env.WAGTAIL_BASE_URL;
-const WAGTAIL_API_PATH = process.env.WAGTAIL_API_PATH || "/api/v2";
-const WAGTAIL_API_KEY = process.env.WAGTAIL_API_KEY;
 
 // --- Tool Definition ---
 const toolName = "search_documents";
@@ -59,37 +51,27 @@ const execute = async (
 ): Promise<ContentResult> => {
 	context.log.info(`Executing ${toolName} tool with args:`, args);
 
-	if (!WAGTAIL_BASE_URL) {
-		context.log.error("WAGTAIL_BASE_URL environment variable is not set.");
-		throw new Error("Server configuration error: WAGTAIL_BASE_URL is not set.");
-	}
-
-	// Construct API URL and Parameters
-	const baseUrl = WAGTAIL_BASE_URL.replace(/\/$/, "");
-	const apiBasePath = WAGTAIL_API_PATH.replace(/^\/|\/$/g, "");
-	const apiUrl = `${baseUrl}/${apiBasePath}/documents/`; // Target the documents endpoint
-
-	const queryParams: Record<string, string> = {
-		search: args.query, // query is guaranteed by min(1)
-	};
+	// Configure Query Params
+	const queryParams: Record<string, string> = { search: args.query };
 	// search_operator has a default, so it will always be present
 	queryParams.search_operator = args.search_operator;
 
-	// Configure Headers
+	// Construct API URL using the config function
+	const specificPath = "/documents/";
+	const apiUrl = getWagtailApiUrl(specificPath, queryParams);
+
+	// Configure Headers using the config function
 	const headers: Record<string, string> = { "Accept": "application/json" };
-	if (WAGTAIL_API_KEY) {
-		headers["Authorization"] = `Bearer ${WAGTAIL_API_KEY}`;
+	const apiKey = getWagtailApiKey();
+	if (apiKey) {
+		headers["Authorization"] = `Bearer ${apiKey}`;
 	}
 
-	context.log.info(`Calling Wagtail API: ${apiUrl}`, { params: queryParams });
+	context.log.info(`Calling Wagtail API: ${apiUrl}`);
 
 	// Make API Call
 	try {
-		const response = await axios.get<DocumentApiResponse>(apiUrl, {
-			headers: headers,
-			params: queryParams,
-			// Omitting signal handling for now, axios might timeout based on config
-		});
+		const response = await axios.get<DocumentApiResponse>(apiUrl, { headers });
 
 		context.log.info(`Received response from Wagtail API`, { status: response.status });
 

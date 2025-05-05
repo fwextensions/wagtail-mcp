@@ -1,26 +1,19 @@
-import axios, { AxiosError } from "axios";
+import axios from "axios";
 import { z } from "zod";
-import { zNullToUndefined } from "./zodNullToUndefined";
-import * as dotenv from "dotenv";
-import type { FastMCP, Tool, Content, Context, ContentResult } from "fastmcp";
+import { zNullToUndefined } from "@/utils/zodNullToUndefined";
+import { getWagtailApiUrl, getWagtailApiKey } from "@/utils/config";
+import type { FastMCP, Context, ContentResult } from "fastmcp";
 import { UserError } from "fastmcp";
 
 type ToolContext = Context<any>;
 
-dotenv.config();
-const WAGTAIL_BASE_URL = process.env.WAGTAIL_BASE_URL;
-const WAGTAIL_API_PATH = process.env.WAGTAIL_API_PATH || "/api/v2";
-const WAGTAIL_API_KEY = process.env.WAGTAIL_API_KEY;
-
 const name = "get_page_details";
 const description = "Retrieves the full details of a specific Wagtail page by its ID, slug, or URL. Requires at least one parameter. Priority: id > slug > url.";
 const parameters = z.object({
-	id: zNullToUndefined(z.number().int().nonnegative().optional().describe("The unique numeric ID of the page.")),
-	slug: zNullToUndefined(z.string().optional().describe("The slug (URL path part) of the page (e.g., \"about-us/team\").")),
-	url: zNullToUndefined(z.string().url().optional().describe("The full public URL of the page.")),
+	id: zNullToUndefined(z.number().int().positive().optional().describe("The unique numeric ID of the page.")),
+	slug: zNullToUndefined(z.string().min(1).optional().describe("The slug (URL path part) of the page (e.g., \"about-us/team\").")),
+	url: zNullToUndefined(z.string().url().min(1).optional().describe("The full public URL of the page.")),
 	fields: zNullToUndefined(z.string().optional().describe("Optional comma-separated list to control returned fields (e.g., \"body,feed_image\", \"*,-title\", \"_,my_field\"). See Wagtail API docs for details.")),
-}).refine(data => data.id !== undefined || data.slug !== undefined || data.url !== undefined, {
-	message: "At least one of 'id', 'slug', or 'url' must be provided.",
 });
 
 type GetPageDetailsArgs = z.infer<typeof parameters>;
@@ -32,63 +25,61 @@ const execute = async (
 ): Promise<ContentResult> => {
 	context.log.info(`Executing ${name} tool with args:`, args);
 
-	let effectiveArgs = { ...args };
-	if (effectiveArgs.id === 0) {
-		context.log.info("Received id=0, treating as undefined.");
-		effectiveArgs.id = undefined;
-		if (effectiveArgs.slug === undefined && effectiveArgs.url === undefined) {
-			throw new UserError("At least one valid 'id' (non-zero), 'slug', or 'url' must be provided.");
-		}
-	}
-	if (!WAGTAIL_BASE_URL) {
-		context.log.error("WAGTAIL_BASE_URL environment variable is not set.");
-		throw new Error("Server configuration error: WAGTAIL_BASE_URL is not set.");
+	const { id, slug, url, fields } = args;
+
+	// Validate that at least one identifier is present
+	if (!id && !slug && !url) {
+		throw new UserError("At least one of 'id', 'slug', or 'url' must be provided.");
 	}
 
-	const apiBasePath = WAGTAIL_API_PATH.replace(/^\/|\/$/g, "");
-	let apiEndpoint = "";
+	let specificPath = "/pages/";
 	const queryParams: Record<string, string | number> = {};
 
-	if (effectiveArgs.id !== undefined) {
-		apiEndpoint = `/${apiBasePath}/pages/${effectiveArgs.id}/`;
-		context.log.info(`Looking up page by ID: ${effectiveArgs.id}`);
-	} else if (effectiveArgs.slug !== undefined) {
-		apiEndpoint = `/${apiBasePath}/pages/find/`;
-		queryParams.html_path = effectiveArgs.slug;
-		context.log.info(`Looking up page by slug: ${effectiveArgs.slug}`);
-	} else if (effectiveArgs.url !== undefined) {
-		apiEndpoint = `/${apiBasePath}/pages/find/`;
+	// Determine API path and query parameters based on provided identifiers (id > slug > url)
+	if (id) {
+		specificPath += `${id}/`;
+		context.log.info(`Looking up page by ID: ${id}`);
+	} else if (slug) {
+		specificPath += `find/`;
+		queryParams.html_path = slug; 
+		context.log.info(`Looking up page by slug: ${slug}`);
+	} else if (url) {
+		specificPath += `find/`;
 		try {
-			const parsedUrl = new URL(effectiveArgs.url);
-			queryParams.html_path = parsedUrl.pathname.replace(/^\/|\/$/g, "");
-			context.log.info(`Looking up page by URL path: ${queryParams.html_path}`);
+			const urlObject = new URL(url);
+			queryParams.hostname = urlObject.hostname;
+			queryParams.port = urlObject.port || (urlObject.protocol === "https:" ? "443" : "80");
+			queryParams.path = urlObject.pathname.substring(1); // Remove leading slash
+			context.log.info(`Looking up page by URL path: ${queryParams.path}`);
 		} catch (e) {
-			context.log.error(`Invalid URL provided: ${effectiveArgs.url}`, { error: String(e) });
-			throw new UserError(`Invalid URL format provided: ${effectiveArgs.url}`);
+			context.log.error(`Invalid URL provided: ${url}`, { error: String(e) });
+			throw new UserError(`Invalid URL format provided: ${url}`);
 		}
-	} else {
-		context.log.error("Internal error: No valid parameter found despite schema validation.");
-		throw new Error("Internal error: No valid parameter found.");
 	}
 
-	if (effectiveArgs.fields !== undefined) {
-		queryParams.fields = effectiveArgs.fields;
-		context.log.info(`Requesting specific fields: ${effectiveArgs.fields}`);
+	// Add fields parameter if provided
+	if (fields) {
+		queryParams.fields = fields;
+		context.log.info(`Requesting specific fields: ${fields}`);
 	} else {
+		queryParams.fields = "*"; // Default to all fields if none specified
 		context.log.info("Requesting default fields.");
 	}
 
-	const baseUrl = WAGTAIL_BASE_URL.replace(/\/$/, "");
-	const apiUrl = `${baseUrl}${apiEndpoint}`;
+	// Construct the full API URL using the config function
+	const apiUrl = getWagtailApiUrl(specificPath, queryParams);
+
+	// Configure Headers
 	const headers: Record<string, string> = { "Accept": "application/json" };
-	if (WAGTAIL_API_KEY) {
-		headers["Authorization"] = `Bearer ${WAGTAIL_API_KEY}`;
+	const apiKey = getWagtailApiKey();
+	if (apiKey) {
+		headers["Authorization"] = `Bearer ${apiKey}`;
 	}
 
-	context.log.info(`Calling Wagtail API: ${apiUrl}`, { params: queryParams });
+	context.log.info(`Calling Wagtail API: ${apiUrl}`); // Log the full URL
 
 	try {
-		const response = await axios.get<WagtailPageDetailResponse>(apiUrl, { params: queryParams, headers });
+		const response = await axios.get<WagtailPageDetailResponse>(apiUrl, { headers }); // Remove params
 		context.log.info(`Received response from Wagtail API`, { status: response.status });
 
 		if (!response.data) {
@@ -130,7 +121,7 @@ const execute = async (
 			message += `: ${error.message}`;
 
 			if (status === 404) {
-				const identifier = effectiveArgs.id ?? effectiveArgs.slug ?? effectiveArgs.url;
+				const identifier = id ?? slug ?? url;
 				throw new UserError(`Page not found for identifier: ${identifier}`);
 			} else if (status && status >= 400 && status < 500) {
 				throw new UserError(`Client error calling Wagtail API (Status: ${status}). Check parameters.`, { detail: message, request: errorDetails });

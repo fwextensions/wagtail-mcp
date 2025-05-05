@@ -1,9 +1,21 @@
 #!/usr/bin/env node
 
+import fs from "fs";
+import path from "path";
+
+// Conditionally load .env file if it exists in the project root
+const envPath = path.resolve(__dirname, "../.env");
+if (fs.existsSync(envPath)) {
+	try {
+		process.loadEnvFile(envPath);
+		console.log("Loaded environment variables from .env file.");
+	} catch (err) {
+		console.error("Error loading .env file:", err);
+	}
+}
+
 // Use FastMCP
 import { FastMCP } from "fastmcp"; 
-import * as dotenv from "dotenv";
-import path from "path";
 
 // Import the registration functions from each tool module
 import { registerTool as registerGetPageDetails } from "./tools/get-page-details.tool";
@@ -11,12 +23,10 @@ import { registerTool as registerSearchPages } from "./tools/search-pages.tool";
 import { registerTool as registerGetDocumentDetails } from "./tools/get-document-details.tool";
 import { registerTool as registerSearchDocuments } from "./tools/search-documents.tool";
 
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
-
 async function main() {
 	// Initialize Configuration
 	const serviceName = process.env.MCP_SERVICE_NAME || "Wagtail MCP Server";
-	const serviceVersion = "0.0.1"; // Explicitly set version string
+	const serviceVersion = "0.0.1"; 
 	const transportType = (process.env.MCP_TRANSPORT || "STDIO").toUpperCase();
 
 	console.error(`Starting ${serviceName} v${serviceVersion}...`);
@@ -24,7 +34,7 @@ async function main() {
 	// --- Server Initialization using FastMCP ---
 	const server = new FastMCP({
 		name: serviceName,
-		version: serviceVersion, // Use the explicitly defined version
+		version: serviceVersion, 
 		// Optional: Add server-level capabilities if needed
 		// capabilities: { ... }
 	});
@@ -43,7 +53,7 @@ async function main() {
 			console.error("Connecting using STDIO transport...");
 			// Use the start method with options object
 			await server.start({
-				transportType: "stdio", // Specify transport type here
+				transportType: "stdio", 
 			});
 			console.error("STDIO transport connected and server started.");
 		} else {

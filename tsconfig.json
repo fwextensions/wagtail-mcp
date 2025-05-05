@@ -7,11 +7,16 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "outDir": "./dist", // Output directory for compiled JS
     "rootDir": "./src", // Source directory
     "resolveJsonModule": true, // Allow importing JSON files
     "sourceMap": true, // Generate source maps for debugging
-    "moduleResolution": "NodeNext"
+    "moduleResolution": "NodeNext",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src/**/*.ts"], // Files to include in compilation
   "exclude": ["node_modules", "**/*.spec.ts"] // Files to exclude
