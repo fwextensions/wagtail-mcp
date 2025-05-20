@@ -1,7 +1,8 @@
 {
   "compilerOptions": {
-    "target": "ES2020", // Target modern Node.js versions
-    "module": "NodeNext", // Or "ESNext" if using ESM
+    "target": "ES2020",
+    "module": "NodeNext",
+    "baseUrl": ".",
     "lib": ["ES2020"],
     "strict": true,
     "esModuleInterop": true,
@@ -9,15 +10,15 @@
     "forceConsistentCasingInFileNames": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "outDir": "./dist", // Output directory for compiled JS
-    "rootDir": "./src", // Source directory
-    "resolveJsonModule": true, // Allow importing JSON files
-    "sourceMap": true, // Generate source maps for debugging
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "resolveJsonModule": true,
+    "sourceMap": true,
     "moduleResolution": "NodeNext",
     "paths": {
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*.ts"], // Files to include in compilation
-  "exclude": ["node_modules", "**/*.spec.ts"] // Files to exclude
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "**/*.spec.ts"]
 }

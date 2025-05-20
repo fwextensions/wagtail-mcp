@@ -15,7 +15,7 @@ if (fs.existsSync(envPath)) {
 }
 
 // Use FastMCP
-import { FastMCP } from "fastmcp"; 
+import { FastMCP } from "fastmcp";
 
 // Import the registration functions from each tool module
 import { registerTool as registerGetPageDetails } from "./tools/get-page-details.tool";
@@ -25,8 +25,8 @@ import { registerTool as registerSearchDocuments } from "./tools/search-document
 
 async function main() {
 	// Initialize Configuration
-	const serviceName = process.env.MCP_SERVICE_NAME || "Wagtail MCP Server";
-	const serviceVersion = "0.0.1"; 
+	const serviceName = "Wagtail MCP Server";
+	const serviceVersion = "0.0.1";
 	const transportType = (process.env.MCP_TRANSPORT || "STDIO").toUpperCase();
 
 	console.error(`Starting ${serviceName} v${serviceVersion}...`);
@@ -34,7 +34,7 @@ async function main() {
 	// --- Server Initialization using FastMCP ---
 	const server = new FastMCP({
 		name: serviceName,
-		version: serviceVersion, 
+		version: serviceVersion,
 		// Optional: Add server-level capabilities if needed
 		// capabilities: { ... }
 	});
@@ -53,7 +53,7 @@ async function main() {
 			console.error("Connecting using STDIO transport...");
 			// Use the start method with options object
 			await server.start({
-				transportType: "stdio", 
+				transportType: "stdio",
 			});
 			console.error("STDIO transport connected and server started.");
 		} else {

@@ -17,6 +17,9 @@
     "type": "git",
     "url": "https://github.com/fwextensions/wagtail-mcp.git"
   },
+  "files": [
+    "dist"
+  ],
   "main": "dist/server.js",
   "bin": {
     "wagtail-mcp": "./dist/server.js"
@@ -25,7 +28,7 @@
     "node": ">=21.7.0"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && tscpaths -p tsconfig.json -s ./src -o ./dist",
     "start": "npm run build && node dist/server.js",
     "dev": "tsx watch src/server.ts",
     "inspect": "npx -y @modelcontextprotocol/inspector tsx src/server.ts",
@@ -42,6 +45,7 @@
   "devDependencies": {
     "@tsconfig/node22": "^22.0.1",
     "@types/node": "^22.15.3",
+    "tscpaths": "^0.0.9",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   }

@@ -1,8 +1,8 @@
 import axios from "axios";
 import { z } from "zod";
 
-import type { FastMCP, Context, ContentResult } from "fastmcp"; 
-import { UserError } from "fastmcp"; 
+import type { FastMCP, Context, ContentResult } from "fastmcp";
+import { UserError } from "fastmcp";
 
 import { getWagtailApiUrl, getWagtailApiKey } from "@/utils/config";
 
@@ -12,15 +12,12 @@ const toolDescription = "Searches pages from the Wagtail CMS API based on a quer
 
 // --- Input Parameters Schema ---
 const parameters = z.object({
-	query: z.string().describe("Query term to search pages. This is required."),
+	query: z.string().optional().describe("Query term to search pages. This is required."),
 	type: z.string().optional().describe("Filter by page type (e.g., blog.BlogPage)."),
 	locale: z.string().default("en").describe("The locale code (e.g., en, es) to filter pages by. Defaults to en."),
 	limit: z.number().int().positive().default(50).describe("Maximum number of pages to return."),
 	offset: z.number().int().nonnegative().optional().describe("Offset for pagination."),
 	search_operator: z.enum(["and", "or"]).optional().describe("Search operator for multiple terms (\"and\" or \"or\"). Defaults based on Wagtail search backend."),
-}).refine(data => data.query !== undefined && data.query.trim() !== '', {
-	message: "The 'query' parameter is required and cannot be empty.",
-	path: ["query"], // Specify the path of the error
 });
 
 // Type alias for validated arguments
@@ -67,16 +64,17 @@ type ToolContext = Context<any>;
 
 // --- Tool Handler ---
 const execute = async (
-	args: SearchPagesArgs, 
+	args: SearchPagesArgs,
 	context: ToolContext
-): Promise<ContentResult> => { 
+): Promise<ContentResult> => {
 	context.log.info(`Executing ${toolName} tool with args:`, args);
 
 	// Configure Query Params
 	const queryParams: Record<string, string | number> = {
-		search: args.query!, // Assert non-null as it's validated by refine
 		limit: args.limit,
 	};
+
+	if (args.query) queryParams.search = args.query;
 	if (args.type !== undefined) queryParams.type = args.type;
 	if (args.locale !== undefined) queryParams.locale = args.locale;
 	if (args.offset !== undefined) queryParams.offset = args.offset;
