@@ -15,6 +15,7 @@ const parameters = z.object({
 	query: z.string().optional().describe("Query term to search pages. This is required."),
 	type: z.string().optional().describe("Filter by page type (e.g., blog.BlogPage)."),
 	locale: z.string().default("en").describe("The locale code (e.g., en, es) to filter pages by. Defaults to en."),
+	fields: z.string().optional().describe("Comma-separated list of fields to include in the response (e.g., 'title,body', '*, -content_editor', '_,my_custom_field')."),
 	limit: z.number().int().positive().default(50).describe("Maximum number of pages to return."),
 	offset: z.number().int().nonnegative().optional().describe("Offset for pagination."),
 	search_operator: z.enum(["and", "or"]).optional().describe("Search operator for multiple terms (\"and\" or \"or\"). Defaults based on Wagtail search backend."),
@@ -47,18 +48,6 @@ interface WagtailPagesApiResponse {
 	items: WagtailPageItem[];
 }
 
-// Expected output structure for each page item
-const OutputPageSchema = z.object({
-	id: z.number(),
-	type: z.string(),
-	locale: z.string().optional(), // Make optional if not always present
-	title: z.string(),
-	slug: z.string(),
-	url: z.string().url().nullable(),
-	detail_api_url: z.string().url(),
-});
-type OutputPage = z.infer<typeof OutputPageSchema>;
-
 // Use a generic context type for simplicity if auth isn't used
 type ToolContext = Context<any>;
 
@@ -70,7 +59,7 @@ const execute = async (
 	context.log.info(`Executing ${toolName} tool with args:`, args);
 
 	// Configure Query Params
-	const queryParams: Record<string, string | number> = {
+	const queryParams: Record<string, any> = {
 		limit: args.limit,
 	};
 
@@ -79,6 +68,7 @@ const execute = async (
 	if (args.locale !== undefined) queryParams.locale = args.locale;
 	if (args.offset !== undefined) queryParams.offset = args.offset;
 	if (args.search_operator !== undefined) queryParams.search_operator = args.search_operator;
+	if (args.fields !== undefined) queryParams.fields = args.fields;
 
 	// Construct API URL using the config function
 	const specificPath = "/pages/";
@@ -108,33 +98,17 @@ const execute = async (
 			throw new Error("Received invalid data structure from Wagtail API.");
 		}
 
-		// Map API response to the desired simpler format
-		let outputItems: OutputPage[];
-		outputItems = results.items.map(item => ({
-			id: item.id,
-			type: item.meta.type,
-			locale: item.meta.locale,
-			title: item.title,
-			slug: item.meta.slug,
-			url: item.meta.html_url,
-			detail_api_url: item.meta.detail_url,
-			// Include other fields if they are part of the default response and needed
-		}));
-
-		// Prepare JSON output
+		// Prepare JSON output - directly using results.items
 		let outputJson: string;
 		try {
-			 // Validate final structure before stringifying (optional but recommended)
-			const finalValidation = z.array(OutputPageSchema).safeParse(outputItems);
-			if (!finalValidation.success) {
-				context.log.warn("Final mapped output validation failed:", finalValidation.error.format());
-				 // Decide how to handle: throw, return partial, return empty? Returning for now.
-			}
 			outputJson = JSON.stringify(
-				 {
-					 count: results.meta.total_count,
-					 items: finalValidation.success ? finalValidation.data : outputItems // Use validated data if possible
-				 }, null, 2);
+				{
+					count: results.meta.total_count,
+					items: results.items // Use raw items from API response
+				},
+				null,
+				2
+			);
 		} catch (stringifyError) {
 			context.log.error("Failed to stringify API response data", { error: String(stringifyError) });
 			throw new Error("Failed to format API response.");
@@ -142,7 +116,7 @@ const execute = async (
 
 		// Return ContentResult structure
 		return {
-			content: [{ type: "text", text: outputJson }], // No backticks
+			content: [{ type: "text", text: outputJson }],
 		};
 
 	} catch (error: unknown) {

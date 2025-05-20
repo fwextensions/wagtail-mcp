@@ -38,6 +38,7 @@ Make sure to set `WAGTAIL_BASE_URL` to the base URL of your Wagtail API instance
         *   `search_operator` (string, optional, values: `and`, `or`): Determines how multiple terms in the `query` are combined. Defaults based on the Wagtail search backend configuration.
         *   `limit` (integer, optional, default: `50`): The maximum number of page results to return.
         *   `offset` (integer, optional): The starting point for paginated results (e.g., an `offset` of `10` skips the first 10 results).
+        *   `fields` (string, optional): A comma-separated list to control which fields are returned in the response for each page. Examples: `title,body` (returns only title and body), `*,-summary` (returns all fields except summary), `_,custom_field_name` (returns default fields plus a specific custom field). Refer to Wagtail API documentation for more on field selection syntax.
     *   Usage: Useful for finding pages matching certain keywords, potentially filtered by their type or language. For example, searching for all "news" articles in Spanish. Returns a list of pages with their details.
 
 *   **`get_page_details`**: Retrieves the full details of a specific Wagtail page.
