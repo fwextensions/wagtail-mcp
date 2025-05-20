@@ -15,14 +15,14 @@
   "homepage": "https://github.com/fwextensions/wagtail-mcp",
   "repository": {
     "type": "git",
-    "url": "https://github.com/fwextensions/wagtail-mcp.git"
+    "url": "git+https://github.com/fwextensions/wagtail-mcp.git"
   },
   "files": [
     "dist"
   ],
   "main": "dist/server.js",
   "bin": {
-    "wagtail-mcp": "./dist/server.js"
+    "wagtail-mcp": "dist/server.js"
   },
   "engines": {
     "node": ">=21.7.0"
@@ -32,19 +32,16 @@
     "start": "npm run build && node dist/server.js",
     "dev": "tsx watch src/server.ts",
     "inspect": "npx -y @modelcontextprotocol/inspector tsx src/server.ts",
-    "prepare": "npm run build",
-    "prepublishOnly": "npm run build",
-    "postinstall": "patch-package"
+    "prepare": "npm run build"
   },
   "dependencies": {
     "axios": "^1.9.0",
-    "fastmcp": "^1.24.0",
-    "patch-package": "^8.0.0",
-    "zod": "^3.24.4"
+    "fastmcp": "^1.27.7",
+    "zod": "^3.25.7"
   },
   "devDependencies": {
-    "@tsconfig/node22": "^22.0.1",
-    "@types/node": "^22.15.3",
+    "@tsconfig/node22": "^22.0.2",
+    "@types/node": "^22.15.20",
     "tscpaths": "^0.0.9",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
